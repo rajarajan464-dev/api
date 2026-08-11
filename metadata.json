@@ -1,0 +1,6 @@
+{
+  "name": "திரு கணித பஞ்சாங்கம் - API",
+  "description": "Thiru Ganitha (Drik) Panchangam calculation engine & REST API app providing Tithi, Nakshatra, Nalla Neram, Rahu Kalam, Gowri Panchangam & Festivals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
