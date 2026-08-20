@@ -10,7 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,7 @@ import com.example.model.HoraiPeriod
 import com.example.model.PanchangResult
 import com.example.ui.theme.AuspiciousGreen
 import com.example.ui.theme.InauspiciousRed
+import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +37,22 @@ fun GowriHoraiScreen(
     panchang: PanchangResult,
     language: String
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Gowri, 1 = Subha Horai
+    var selectedMainTab by remember { mutableIntStateOf(0) } // 0 = Gowri, 1 = Subha Horai
+    var selectedTimeFilter by remember { mutableIntStateOf(0) } // 0 = Day (பகல்), 1 = Night (இரவு), 2 = All (அனைத்தும்)
+
+    val now = LocalTime.now()
+    val currentMinutes = now.hour * 60 + now.minute
+    val all24Horai = panchang.horaiDayList + panchang.horaiNightList
+    val currentHorai = all24Horai.firstOrNull { horai ->
+        val start = horai.startMinutes
+        val end = horai.endMinutes
+        val normCurrent = if (currentMinutes < (panchang.horaiDayList.firstOrNull()?.startMinutes ?: 360)) {
+            currentMinutes + 1440
+        } else {
+            currentMinutes
+        }
+        normCurrent in start until end
+    } ?: all24Horai.getOrNull((now.hour - 6 + 24) % 24)
 
     Column(
         modifier = Modifier
@@ -42,13 +61,13 @@ fun GowriHoraiScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Tab Selector
+        // Main Tab Selector (கௌரி பஞ்சாங்கம் / சுப ஹோரை)
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth()
         ) {
             SegmentedButton(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
+                selected = selectedMainTab == 0,
+                onClick = { selectedMainTab = 0 },
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                 modifier = Modifier.testTag("gowri_tab")
             ) {
@@ -59,27 +78,90 @@ fun GowriHoraiScreen(
                 )
             }
             SegmentedButton(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
+                selected = selectedMainTab == 1,
+                onClick = { selectedMainTab = 1 },
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                 modifier = Modifier.testTag("horai_tab")
             ) {
                 Text(
-                    text = if (language == "ta") "சுப ஹோரை" else "Subha Horai",
+                    text = if (language == "ta") "சுப ஹோரை (24 மணி)" else "Subha Horai (24 Hr)",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        if (selectedTab == 0) {
+        // Sub-filter (பகல் / இரவு / முழு அட்டவணை)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedTimeFilter == 0,
+                onClick = { selectedTimeFilter = 0 },
+                label = {
+                    Text(if (language == "ta") "பகல் (Day)" else "Day")
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.WbSunny,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+
+            FilterChip(
+                selected = selectedTimeFilter == 1,
+                onClick = { selectedTimeFilter = 1 },
+                label = {
+                    Text(if (language == "ta") "இரவு (Night)" else "Night")
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.DarkMode,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+
+            FilterChip(
+                selected = selectedTimeFilter == 2,
+                onClick = { selectedTimeFilter = 2 },
+                label = {
+                    Text(if (language == "ta") "முழுவதும்" else "24h All")
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (selectedMainTab == 0) {
+            // Gowri Panchangam
+            val gowriList = when (selectedTimeFilter) {
+                0 -> panchang.gowriDayList
+                1 -> panchang.gowriNightList
+                else -> panchang.gowriDayList + panchang.gowriNightList
+            }
+
             Text(
                 text = if (language == "ta")
-                    "இன்றைய கௌரி பஞ்சாங்கம் (${panchang.vaara.nameTamil})"
+                    "கௌரி பஞ்சாங்கம் - ${panchang.vaara.nameTamil} (${if (selectedTimeFilter == 0) "பகல்" else if (selectedTimeFilter == 1) "இரவு" else "முழுவதும்"})"
                 else
-                    "Today's Gowri Panchangam (${panchang.vaara.nameEnglish})",
+                    "Gowri Panchangam - ${panchang.vaara.nameEnglish} (${if (selectedTimeFilter == 0) "Day" else if (selectedTimeFilter == 1) "Night" else "Full Day"})",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -88,18 +170,71 @@ fun GowriHoraiScreen(
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                items(panchang.gowriDayList) { item ->
+                items(gowriList) { item ->
                     GowriItemCard(item, language)
                 }
             }
         } else {
+            // Subha Horai
+            val horaiList = when (selectedTimeFilter) {
+                0 -> panchang.horaiDayList
+                1 -> panchang.horaiNightList
+                else -> panchang.horaiDayList + panchang.horaiNightList
+            }
+
+            // Current Horai Summary Pill
+            if (currentHorai != null) {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = if (language == "ta") "தற்போதைய நடப்பு ஓரை" else "Current Active Horai",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = if (language == "ta") "${currentHorai.planetTamil} ஓரை" else "${currentHorai.planetEnglish} Horai",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (currentHorai.isGood) AuspiciousGreen else InauspiciousRed
+                        ) {
+                            Text(
+                                text = if (language == "ta") currentHorai.qualityTamil else currentHorai.qualityEnglish,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
             Text(
                 text = if (language == "ta")
-                    "இன்றைய சுப ஹோரை அட்டவணை (${panchang.vaara.nameTamil})"
+                    "சுப ஓரை அட்டவணை - ${panchang.vaara.nameTamil} (${if (selectedTimeFilter == 0) "பகல் 6 AM - 6 PM" else if (selectedTimeFilter == 1) "இரவு 6 PM - 6 AM" else "24 மணி நேரம்"})"
                 else
-                    "Today's Subha Horai Schedule (${panchang.vaara.nameEnglish})",
+                    "Subha Horai Schedule - ${panchang.vaara.nameEnglish} (${if (selectedTimeFilter == 0) "Day 6 AM - 6 PM" else if (selectedTimeFilter == 1) "Night 6 PM - 6 AM" else "24 Hours"})",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -108,10 +243,11 @@ fun GowriHoraiScreen(
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                items(panchang.horaiDayList) { item ->
-                    HoraiItemCard(item, language)
+                items(horaiList) { item ->
+                    val isCurrent = currentHorai != null && item.periodIndex == currentHorai.periodIndex
+                    HoraiItemCard(item, language, isCurrent)
                 }
             }
         }
@@ -137,7 +273,10 @@ private fun GowriItemCard(item: GowriPeriod, language: String) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -187,15 +326,27 @@ private fun GowriItemCard(item: GowriPeriod, language: String) {
 }
 
 @Composable
-private fun HoraiItemCard(item: HoraiPeriod, language: String) {
+private fun HoraiItemCard(
+    item: HoraiPeriod,
+    language: String,
+    isCurrent: Boolean = false
+) {
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isGood) AuspiciousGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = when {
+                isCurrent -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                item.isGood -> AuspiciousGreen.copy(alpha = 0.08f)
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
         ),
         border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (item.isGood) AuspiciousGreen.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outlineVariant
+            if (isCurrent) 2.dp else 1.dp,
+            when {
+                isCurrent -> MaterialTheme.colorScheme.primary
+                item.isGood -> AuspiciousGreen.copy(alpha = 0.3f)
+                else -> MaterialTheme.colorScheme.outlineVariant
+            }
         )
     ) {
         Row(
@@ -205,21 +356,42 @@ private fun HoraiItemCard(item: HoraiPeriod, language: String) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Schedule,
                     contentDescription = null,
-                    tint = if (item.isGood) AuspiciousGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (isCurrent) MaterialTheme.colorScheme.primary else if (item.isGood) AuspiciousGreen else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column {
-                    Text(
-                        text = if (language == "ta") "${item.planetTamil} ஹோரை" else "${item.planetEnglish} Horai",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (language == "ta") "${item.planetTamil} ஓரை" else "${item.planetEnglish} Horai",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (isCurrent) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            ) {
+                                Text(
+                                    text = if (language == "ta") "நடப்பு" else "NOW",
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = item.timeSlot,
                         style = MaterialTheme.typography.bodySmall,

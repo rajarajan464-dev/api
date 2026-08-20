@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,10 +28,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.engine.ThiruGanithaEngine
 import com.example.model.PanchangResult
+import com.example.ui.components.NakshatraDetailDialog
+import com.example.ui.components.TithiDetailDialog
 import com.example.ui.theme.AuspiciousGreen
 import com.example.ui.theme.InauspiciousRed
+import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -59,11 +66,111 @@ fun DailyPanchangScreen(
         )
     }
 
+    val baseDate = remember { LocalDate.of(2000, 1, 1) }
+    val initialPage = remember { ChronoUnit.DAYS.between(baseDate, selectedDate).toInt() }
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { 100000 })
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(pagerState.currentPage) {
+        val targetDate = baseDate.plusDays(pagerState.currentPage.toLong())
+        if (targetDate != selectedDate) {
+            onDateSelected(targetDate)
+        }
+    }
+
+    LaunchedEffect(selectedDate) {
+        val targetPage = ChronoUnit.DAYS.between(baseDate, selectedDate).toInt()
+        if (pagerState.currentPage != targetPage) {
+            pagerState.animateScrollToPage(targetPage)
+        }
+    }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize()
+    ) { page ->
+        val pageDate = baseDate.plusDays(page.toLong())
+        val pagePanchang = if (pageDate == selectedDate) panchang else ThiruGanithaEngine.calculatePanchang(pageDate)
+
+        DailyPanchangPageContent(
+            panchang = pagePanchang,
+            language = language,
+            datePickerDialog = datePickerDialog,
+            onPreviousDay = {
+                coroutineScope.launch {
+                    if (pagerState.currentPage > 0) {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
+                }
+            },
+            onNextDay = {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                }
+            },
+            onToday = {
+                val todayPage = ChronoUnit.DAYS.between(baseDate, LocalDate.now()).toInt()
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(todayPage)
+                }
+            },
+            onSaveNoteRequested = onSaveNoteRequested
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DailyPanchangPageContent(
+    panchang: PanchangResult,
+    language: String,
+    datePickerDialog: DatePickerDialog,
+    onPreviousDay: () -> Unit,
+    onNextDay: () -> Unit,
+    onToday: () -> Unit,
+    onSaveNoteRequested: (String) -> Unit
+) {
+    var showNoteDialog by remember { mutableStateOf(false) }
+    var showNakshatraDialog by remember { mutableStateOf(false) }
+    var showTithiDialog by remember { mutableStateOf(false) }
+    var noteInput by remember { mutableStateOf("") }
+
+    if (showTithiDialog) {
+        val parsedDate = remember(panchang.dateIso) {
+            try {
+                LocalDate.parse(panchang.dateIso)
+            } catch (e: Exception) {
+                LocalDate.now()
+            }
+        }
+        TithiDetailDialog(
+            selectedDate = parsedDate,
+            city = panchang.city,
+            language = language,
+            onDismissRequest = { showTithiDialog = false }
+        )
+    }
+
+    if (showNakshatraDialog) {
+        val parsedDate = remember(panchang.dateIso) {
+            try {
+                LocalDate.parse(panchang.dateIso)
+            } catch (e: Exception) {
+                LocalDate.now()
+            }
+        }
+        NakshatraDetailDialog(
+            selectedDate = parsedDate,
+            city = panchang.city,
+            language = language,
+            onDismissRequest = { showNakshatraDialog = false }
+        )
+    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Date Navigation Bar
@@ -72,64 +179,99 @@ fun DailyPanchangScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onPreviousDay,
-                        modifier = Modifier.testTag("prev_day_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ChevronLeft,
-                            contentDescription = "Previous Day"
-                        )
-                    }
-
+                Column {
                     Row(
                         modifier = Modifier
-                            .clickable { datePickerDialog.show() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = "Pick Date",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if (language == "ta") panchang.dateDisplayTamil else panchang.dateDisplayEnglish,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
+                        IconButton(
+                            onClick = onPreviousDay,
+                            modifier = Modifier.testTag("prev_day_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChevronLeft,
+                                contentDescription = "Previous Day"
                             )
-                            Text(
-                                text = panchang.dateIso,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clickable { datePickerDialog.show() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = "Pick Date",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = if (language == "ta") panchang.dateDisplayTamil else panchang.dateDisplayEnglish,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = if (language == "ta") panchang.gregorianDateDisplayTamil else panchang.gregorianDateDisplayEnglish,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AssistChip(
+                                onClick = onToday,
+                                label = { Text(if (language == "ta") "இன்று" else "Today", fontSize = 11.sp) },
+                                modifier = Modifier.testTag("today_chip")
+                            )
+                            IconButton(
+                                onClick = onNextDay,
+                                modifier = Modifier.testTag("next_day_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "Next Day"
+                                )
+                            }
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AssistChip(
-                            onClick = onToday,
-                            label = { Text(if (language == "ta") "இன்று" else "Today", fontSize = 11.sp) },
-                            modifier = Modifier.testTag("today_chip")
-                        )
-                        IconButton(
-                            onClick = onNextDay,
-                            modifier = Modifier.testTag("next_day_btn")
+                    // Modern Slide Hint Badge
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Next Day"
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = "Slide Date",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (language == "ta")
+                                    "👈 ஸ்வைப் செய்து அடுத்த / முந்தைய நாளுக்கு செல்லலாம் 👉"
+                                else
+                                    "👈 Swipe left or right for next / previous date 👉",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -165,20 +307,29 @@ fun DailyPanchangScreen(
                             Column {
                                 Text(
                                     text = if (language == "ta")
-                                        "${panchang.tamilYearTamil} ஆண்டு"
+                                        "தமிழ் தேதி"
                                     else
-                                        "${panchang.tamilYearEnglish} Year",
+                                        "Tamil Date",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
                                 Text(
                                     text = if (language == "ta")
-                                        "${panchang.tamilMonthTamil} மாதம் ${panchang.tamilDay} ஆம் தேதி"
+                                        "${panchang.tamilMonthTamil} ${panchang.tamilDay}, ${panchang.tamilYearTamil} வருடம்"
                                     else
-                                        "${panchang.tamilMonthEnglish} ${panchang.tamilDay}, ${panchang.tamilYearEnglish}",
+                                        "${panchang.tamilMonthEnglish} ${panchang.tamilDay}, ${panchang.tamilYearEnglish} Year",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (language == "ta")
+                                        "ஆங்கில தேதி: ${panchang.gregorianDateDisplayTamil}"
+                                    else
+                                        "Gregorian: ${panchang.gregorianDateDisplayEnglish}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.92f)
                                 )
                             }
 
@@ -251,24 +402,60 @@ fun DailyPanchangScreen(
         // Special Events & Festival Badges (if any)
         if (panchang.specialEventsTamil.isNotEmpty() || panchang.isSubhaMuhurtham) {
             item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var isReminderSet by remember { mutableStateOf(false) }
+
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (panchang.isSubhaMuhurtham) Color(0xFFF1F8E9) else MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                    border = if (panchang.isSubhaMuhurtham) androidx.compose.foundation.BorderStroke(1.5.dp, com.example.ui.theme.AuspiciousGreen) else null
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Stars,
-                                contentDescription = "Special Events",
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (language == "ta") "இன்றைய விசேஷங்கள் & விரதங்கள்" else "Special Events & Fasting Days",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🕉️ ", fontSize = 20.sp)
+                                Text(
+                                    text = if (language == "ta") "இன்றைய விசேஷங்கள் & விரதம்" else "Today's Festivals & Fasting",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+
+                            FilledTonalIconButton(
+                                onClick = {
+                                    isReminderSet = !isReminderSet
+                                    val title = if (language == "ta")
+                                        "🔔 திருவிழா நினைவூட்டல்: ${panchang.specialEventsTamil.firstOrNull() ?: "விசேஷ நாள்"}"
+                                    else
+                                        "🔔 Festival Reminder: ${panchang.specialEventsEnglish.firstOrNull() ?: "Special Day"}"
+
+                                    val msg = if (language == "ta")
+                                        "இன்று (${panchang.dateDisplayTamil}) ${panchang.specialEventsTamil.joinToString(", ")}. திதி: ${panchang.tithi.nameTamil}"
+                                    else
+                                        "Today (${panchang.dateDisplayEnglish}) is ${panchang.specialEventsEnglish.joinToString(", ")}. Tithi: ${panchang.tithi.nameEnglish}"
+
+                                    com.example.notifications.FestivalNotificationHelper.showFestivalNotification(
+                                        context = context,
+                                        title = title,
+                                        message = msg,
+                                        notificationId = panchang.dateIso.hashCode()
+                                    )
+                                },
+                                modifier = Modifier.testTag("set_reminder_btn")
+                            ) {
+                                Icon(
+                                    imageVector = if (isReminderSet) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                                    contentDescription = "Set Reminder",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         FlowRow(
@@ -279,10 +466,10 @@ fun DailyPanchangScreen(
                             events.forEach { event ->
                                 SuggestionChip(
                                     onClick = {},
-                                    label = { Text(event, fontWeight = FontWeight.SemiBold) },
+                                    label = { Text(event, fontWeight = FontWeight.Bold) },
                                     colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
-                                        labelColor = MaterialTheme.colorScheme.primary
+                                        containerColor = if (event.contains("திருமண") || event.contains("Marriage")) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surface,
+                                        labelColor = if (event.contains("திருமண") || event.contains("Marriage")) com.example.ui.theme.AuspiciousGreen else MaterialTheme.colorScheme.primary
                                     )
                                 )
                             }
@@ -306,32 +493,77 @@ fun DailyPanchangScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Tithi
-                AngamCard(
-                    title = if (language == "ta") "1. திதி (Tithi)" else "1. Tithi",
-                    mainValue = if (language == "ta") panchang.tithi.nameTamil else panchang.tithi.nameEnglish,
-                    badgeText = if (language == "ta") panchang.tithi.pakshaTamil else panchang.tithi.pakshaEnglish,
-                    subDetails = if (language == "ta")
-                        "அதிதேவதை: ${panchang.tithi.deityTamil} • ${panchang.tithi.endTime}"
+                val tithiMain = if (panchang.tithi.isFinished) {
+                    if (language == "ta") "${panchang.tithi.currentLiveNameTamil} (நடப்பு)" else "${panchang.tithi.currentLiveNameEnglish} (Live)"
+                } else {
+                    if (language == "ta") panchang.tithi.nameTamil else panchang.tithi.nameEnglish
+                }
+                val tithiBadge = if (panchang.tithi.isFinished) {
+                    if (language == "ta") "${panchang.tithi.currentLivePakshaTamil} (தற்போது)" else "${panchang.tithi.currentLivePakshaEnglish} (Active)"
+                } else {
+                    if (language == "ta") panchang.tithi.pakshaTamil else panchang.tithi.pakshaEnglish
+                }
+                val tithiSub = if (panchang.tithi.isFinished) {
+                    if (language == "ta")
+                        "${panchang.tithi.nameTamil} [${panchang.tithi.endTime} வரை முடிந்தது] ➔ தற்போது ${panchang.tithi.currentLiveNameTamil} (${panchang.tithi.currentLivePakshaTamil}) நடக்கிறது"
                     else
-                        "Deity: ${panchang.tithi.deityEnglish} • ${panchang.tithi.endTime}",
+                        "${panchang.tithi.nameEnglish} [Ended at ${panchang.tithi.endTime}] ➔ Now Active: ${panchang.tithi.currentLiveNameEnglish} (${panchang.tithi.currentLivePakshaEnglish})"
+                } else {
+                    if (language == "ta")
+                        "${if (panchang.tithi.startTime.isNotEmpty()) panchang.tithi.startTime + " முதல் " else ""}• ${panchang.tithi.endTime} • அடுத்தது: ${panchang.tithi.nextNameTamil}"
+                    else
+                        "${if (panchang.tithi.startTime.isNotEmpty()) "From " + panchang.tithi.startTime + " " else ""}• ${panchang.tithi.endTime} • Next: ${panchang.tithi.nextNameEnglish}"
+                }
+
+                AngamCard(
+                    title = if (language == "ta") "1. திதி (Tithi) • விபரம் அறிய தட்டவும்" else "1. Tithi • Tap for Details",
+                    mainValue = tithiMain,
+                    badgeText = tithiBadge,
+                    subDetails = tithiSub,
                     icon = Icons.Default.Brightness2,
-                    badgeColor = if (panchang.tithi.pakshaEnglish.contains("Sukla")) AuspiciousGreen else MaterialTheme.colorScheme.secondary
+                    badgeColor = if (panchang.tithi.isFinished) AuspiciousGreen else (if (panchang.tithi.pakshaEnglish.contains("Sukla")) AuspiciousGreen else MaterialTheme.colorScheme.secondary),
+                    onClick = { showTithiDialog = true }
                 )
 
                 // Nakshatra
-                AngamCard(
-                    title = if (language == "ta") "2. நட்சத்திரம் (Nakshatra)" else "2. Nakshatra",
-                    mainValue = if (language == "ta")
+                val nakshatraMain = if (panchang.nakshatra.isFinished) {
+                    if (language == "ta")
+                        "${panchang.nakshatra.currentLiveNameTamil} (பாதம் ${panchang.nakshatra.currentLivePada}) • நடப்பு"
+                    else
+                        "${panchang.nakshatra.currentLiveNameEnglish} (Pada ${panchang.nakshatra.currentLivePada}) • Live"
+                } else {
+                    if (language == "ta")
                         "${panchang.nakshatra.nameTamil} (பாதம் ${panchang.nakshatra.pada})"
                     else
-                        "${panchang.nakshatra.nameEnglish} (Pada ${panchang.nakshatra.pada})",
-                    badgeText = if (language == "ta") panchang.nakshatra.rasiTamil else panchang.nakshatra.rasiEnglish,
-                    subDetails = if (language == "ta")
-                        "அதிபதி: ${panchang.nakshatra.rulingPlanetTamil} • ${panchang.nakshatra.endTime}"
+                        "${panchang.nakshatra.nameEnglish} (Pada ${panchang.nakshatra.pada})"
+                }
+
+                val nakshatraBadge = if (panchang.nakshatra.isFinished) {
+                    if (language == "ta") "${panchang.nakshatra.currentLiveRasiTamil} (தற்போது)" else "${panchang.nakshatra.currentLiveRasiEnglish} (Active)"
+                } else {
+                    if (language == "ta") panchang.nakshatra.rasiTamil else panchang.nakshatra.rasiEnglish
+                }
+
+                val nakshatraSub = if (panchang.nakshatra.isFinished) {
+                    if (language == "ta")
+                        "${panchang.nakshatra.nameTamil} (பாதம் ${panchang.nakshatra.pada}) [${panchang.nakshatra.endTime} வரை முடிந்தது] ➔ தற்போது ${panchang.nakshatra.currentLiveNameTamil} (பாதம் ${panchang.nakshatra.currentLivePada}) • அதிபதி: ${panchang.nakshatra.currentLiveRulingPlanetTamil}"
                     else
-                        "Ruler: ${panchang.nakshatra.rulingPlanetEnglish} • ${panchang.nakshatra.endTime}",
+                        "${panchang.nakshatra.nameEnglish} (Pada ${panchang.nakshatra.pada}) [Ended at ${panchang.nakshatra.endTime}] ➔ Now Active: ${panchang.nakshatra.currentLiveNameEnglish} • Ruler: ${panchang.nakshatra.currentLiveRulingPlanetEnglish}"
+                } else {
+                    if (language == "ta")
+                        "அதிபதி: ${panchang.nakshatra.rulingPlanetTamil} • ${panchang.nakshatra.endTime} • அடுத்தது: ${panchang.nakshatra.nextNameTamil} (பாதம் ${panchang.nakshatra.nextPada}, ${panchang.nakshatra.nextRasiTamil})"
+                    else
+                        "Ruler: ${panchang.nakshatra.rulingPlanetEnglish} • ${panchang.nakshatra.endTime} • Next: ${panchang.nakshatra.nextNameEnglish} (Pada ${panchang.nakshatra.nextPada}, ${panchang.nakshatra.nextRasiEnglish})"
+                }
+
+                AngamCard(
+                    title = if (language == "ta") "2. நட்சத்திரம் (Nakshatra) • விபரம் அறிய தட்டவும்" else "2. Nakshatra • Tap for Details",
+                    mainValue = nakshatraMain,
+                    badgeText = nakshatraBadge,
+                    subDetails = nakshatraSub,
                     icon = Icons.Default.Star,
-                    badgeColor = MaterialTheme.colorScheme.primary
+                    badgeColor = if (panchang.nakshatra.isFinished) AuspiciousGreen else MaterialTheme.colorScheme.primary,
+                    onClick = { showNakshatraDialog = true }
                 )
 
                 // Vaara
@@ -576,9 +808,12 @@ private fun AngamCard(
     badgeText: String,
     subDetails: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    badgeColor: Color
+    badgeColor: Color,
+    onClick: (() -> Unit)? = null
 ) {
     Card(
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null,
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))

@@ -1,0 +1,165 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- White Rounded Base Card -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,16 h96 a16,16 0 0 1 16,16 v64 a16,16 0 0 1 -16,16 h-96 a16,16 0 0 1 -16,-16 v-64 a16,16 0 0 1 16,-16 Z" />
+
+    <!-- Calendar Outer Frame (Vibrant Royal Blue) -->
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M40,24 h48 a10,10 0 0 1 10,10 v46 a10,10 0 0 1 -10,10 h-48 a10,10 0 0 1 -10,-10 v-46 a10,10 0 0 1 10,-10 Z" />
+
+    <!-- Top Binder Rings -->
+    <!-- Left Ring -->
+    <path
+        android:fillColor="#0052CC"
+        android:pathData="M45,18 h4 a2,2 0 0 1 2,2 v8 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,20 h2 v5 h-2 Z" />
+
+    <!-- Center Ring / Hole -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,26 a3,3 0 1 0 0,-6 a3,3 0 0 0 0,6 Z" />
+
+    <!-- Right Ring -->
+    <path
+        android:fillColor="#0052CC"
+        android:pathData="M79,18 h4 a2,2 0 0 1 2,2 v8 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M80,20 h2 v5 h-2 Z" />
+
+    <!-- Inner White Calendar Sheet -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,36 h42 a3,3 0 0 1 3,3 v40 a7,7 0 0 1 -7,7 h-34 a7,7 0 0 1 -7,-7 v-40 a3,3 0 0 1 3,-3 Z" />
+
+    <!-- Inner Calendar Green/Cyan Header Ribbon -->
+    <path
+        android:pathData="M44,38 h40 v12 h-40 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="44"
+                android:startY="38"
+                android:endX="84"
+                android:endY="50"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#00A896" />
+                <item android:offset="1.0" android:color="#028090" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Number 15 on the calendar (White / Crisp inside) -->
+    <!-- Digit 1 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,41.5 h3 v10 h-3 v-7.5 l-2,1.5 v-2.2 Z" />
+    <!-- Digit 5 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,41.5 h6 v2.5 h-3.8 v1.8 c0.5,-0.3 1.2,-0.5 2,-0.5 c2.2,0 3.8,1.4 3.8,3.3 c0,2.1 -1.8,3.5 -4.2,3.5 c-1.8,0 -3.2,-0.8 -3.8,-1.8 l2,-1.5 c0.4,0.6 1.1,1 1.8,1 c0.9,0 1.6,-0.6 1.6,-1.4 c0,-0.8 -0.7,-1.4 -1.6,-1.4 c-0.8,0 -1.4,0.4 -1.8,0.8 l-2,-0.4 Z" />
+
+    <!-- The Dynamic Vetri Checkmark Sprout ("V" for Vetri / Victory) -->
+    <path
+        android:pathData="M31,48 C37,42 42,50 49,60 C55,68 60,78 63,80 C67,76 74,58 84,38 C89,28 97,18 107,17 C99,23 93,35 87,51 C80,70 70,86 63,86 C58,86 52,77 46,67 C41,59 36,54 31,48 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="31"
+                android:startY="48"
+                android:endX="107"
+                android:endY="17"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#00A896" />
+                <item android:offset="0.4" android:color="#00C49F" />
+                <item android:offset="0.8" android:color="#2BB673" />
+                <item android:offset="1.0" android:color="#38B000" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Sprout Leaves at Top Right -->
+    <!-- Main Top Leaf -->
+    <path
+        android:pathData="M102,15 C99,8 106,6 109,7 C112,8 114,14 107,17 C104,18 103,17 102,15 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="102"
+                android:startY="15"
+                android:endX="112"
+                android:endY="7"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#2BB673" />
+                <item android:offset="1.0" android:color="#55D187" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Secondary Right Leaf -->
+    <path
+        android:pathData="M107,17 C109,13 117,14 118,17 C119,21 113,24 108,20 C106,19 106,18 107,17 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="107"
+                android:startY="17"
+                android:endX="118"
+                android:endY="20"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#2BB673" />
+                <item android:offset="1.0" android:color="#34C759" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lower Text: "VETRI" -->
+    <path
+        android:fillColor="#0A2540"
+        android:pathData="M42,98 L44,105 L46,98 H48 L45,108 H43 L40,98 Z" />
+    <path
+        android:fillColor="#0A2540"
+        android:pathData="M50,98 H56 V100 H52 V102 H55 V104 H52 V106 H56 V108 H50 Z" />
+    <path
+        android:fillColor="#0A2540"
+        android:pathData="M59,100 H57 V98 H63 V100 H61 V108 H59 Z" />
+    <path
+        android:fillColor="#0A2540"
+        android:pathData="M65,98 H69 C71,98 72,99 72,101 C72,102.5 71,103.5 69.5,103.8 L72.5,108 H70 L67.5,104 H67 V108 H65 Z M67,100 V102.5 H69 C69.8,102.5 70.2,102 70.2,101.2 C70.2,100.5 69.8,100 69,100 Z" />
+    <path
+        android:fillColor="#0A2540"
+        android:pathData="M75,98 H77 V108 H75 Z" />
+
+    <!-- Lower Text: "CALENDAR" -->
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M34,112 C33,112 32,113 32,115 C32,117 33,118 34.5,118 C35.3,118 35.8,117.6 36,117.2 L36.8,117.6 C36.4,118.4 35.5,119 34.5,119 C32.5,119 31,117.3 31,115 C31,112.7 32.5,111 34.5,111 C35.5,111 36.4,111.6 36.8,112.4 L36,112.8 C35.8,112.4 35.3,112 34.5,112 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M39.5,111 L41.5,119 H40.4 L39.9,117 H37.9 L37.4,119 H36.3 L38.3,111 Z M38.9,112.8 L38.2,116 H39.6 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M43,111 H44.2 V118 H46.8 V119 H43 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M48,111 H51.5 V112 H49.2 V114.5 H51.2 V115.5 H49.2 V118 H51.5 V119 H48 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M53,111 H54.2 L56.8,116.5 V111 H58 V119 H56.8 L54.2,113.5 V119 H53 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M60,111 H62.2 C64,111 65.2,112.3 65.2,115 C65.2,117.7 64,119 62.2,119 H60 Z M61.2,112 V118 H62.2 C63.4,118 64,116.9 64,115 C64,113.1 63.4,112 62.2,112 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M68.5,111 L70.5,119 H69.4 L68.9,117 H66.9 L66.4,119 H65.3 L67.3,111 Z M67.9,112.8 L67.2,116 H68.6 Z" />
+    <path
+        android:fillColor="#0066FF"
+        android:pathData="M72,111 H74.5 C75.8,111 76.6,111.8 76.6,113 C76.6,114.1 75.8,114.8 74.8,115 L76.8,119 H75.5 L73.7,115.3 H73.2 V119 H72 Z M73.2,112.2 V114.3 H74.4 C75.1,114.3 75.5,113.8 75.5,113.2 C75.5,112.6 75.1,112.2 74.4,112.2 Z" />
+
+</vector>

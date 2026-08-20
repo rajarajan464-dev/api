@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.api.PanchangApiService
@@ -21,7 +22,24 @@ import java.time.LocalDate
 
 class PanchangViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs = application.getSharedPreferences("panchang_user_prefs", Context.MODE_PRIVATE)
     private val repository: PanchangRepository
+
+    companion object {
+        private const val KEY_SELECTED_CITY_ID = "selected_city_id"
+        private const val KEY_LANGUAGE = "selected_language"
+    }
+
+    private fun loadSavedCity(): CityLocation {
+        val savedId = prefs.getString(KEY_SELECTED_CITY_ID, null)
+        return CityLocation.DEFAULT_CITIES.find { it.id == savedId }
+            ?: CityLocation.DEFAULT_CITIES.find { it.id == "chennai" }
+            ?: CityLocation.DEFAULT_CITIES[0]
+    }
+
+    private fun loadSavedLanguage(): String {
+        return prefs.getString(KEY_LANGUAGE, "ta") ?: "ta"
+    }
 
     init {
         val database = PanchangDatabase.getDatabase(application)
@@ -35,14 +53,15 @@ class PanchangViewModel(application: Application) : AndroidViewModel(application
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
-    private val _selectedCity = MutableStateFlow(CityLocation.DEFAULT_CITIES[0])
+    private val initialCity = loadSavedCity()
+    private val _selectedCity = MutableStateFlow(initialCity)
     val selectedCity: StateFlow<CityLocation> = _selectedCity.asStateFlow()
 
-    private val _language = MutableStateFlow("ta") // "ta" or "en"
+    private val _language = MutableStateFlow(loadSavedLanguage()) // "ta" or "en"
     val language: StateFlow<String> = _language.asStateFlow()
 
     private val _currentPanchang = MutableStateFlow(
-        ThiruGanithaEngine.calculatePanchang(LocalDate.now(), CityLocation.DEFAULT_CITIES[0])
+        ThiruGanithaEngine.calculatePanchang(LocalDate.now(), initialCity)
     )
     val currentPanchang: StateFlow<PanchangResult> = _currentPanchang.asStateFlow()
 
@@ -89,11 +108,14 @@ class PanchangViewModel(application: Application) : AndroidViewModel(application
 
     fun setCity(city: CityLocation) {
         _selectedCity.value = city
+        prefs.edit().putString(KEY_SELECTED_CITY_ID, city.id).apply()
         recalculate()
     }
 
     fun toggleLanguage() {
-        _language.value = if (_language.value == "ta") "en" else "ta"
+        val newLang = if (_language.value == "ta") "en" else "ta"
+        _language.value = newLang
+        prefs.edit().putString(KEY_LANGUAGE, newLang).apply()
     }
 
     fun setApiEndpoint(endpoint: String) {

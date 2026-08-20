@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "ThiruGanithaPanchangam"
+rootProject.name = "VetriCalendar"
 
 include(":app")

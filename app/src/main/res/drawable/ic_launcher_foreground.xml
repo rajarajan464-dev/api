@@ -1,30 +1,116 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:pivotX="54"
-        android:pivotY="54">
-        <!-- Golden Sun Outer Rays -->
+        android:scaleX="0.75"
+        android:scaleY="0.75"
+        android:translateX="13.5"
+        android:translateY="13.5">
+
+        <!-- Calendar Outer Frame (Vibrant Royal Blue) -->
         <path
-            android:fillColor="#FFD700"
-            android:pathData="M54,28 L56.5,35.5 L64,35.5 L58,40 L60,47.5 L54,43 L48,47.5 L50,40 L44,35.5 L51.5,35.5 Z" />
-        <!-- Sun Circle -->
+            android:fillColor="#0066FF"
+            android:pathData="M30,22 h48 a10,10 0 0 1 10,10 v46 a10,10 0 0 1 -10,10 h-48 a10,10 0 0 1 -10,-10 v-46 a10,10 0 0 1 10,-10 Z" />
+
+        <!-- Top Binder Rings -->
         <path
-            android:fillColor="#FFC107"
-            android:pathData="M54,34 A20,20 0 1,0 54,74 A20,20 0 1,0 54,34 Z" />
-        <!-- Inner Decorative Ring -->
+            android:fillColor="#0052CC"
+            android:pathData="M35,16 h4 a2,2 0 0 1 2,2 v8 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 Z" />
         <path
-            android:fillColor="#FF8F00"
-            android:pathData="M54,38 A16,16 0 1,0 54,70 A16,16 0 1,0 54,38 Z" />
-        <!-- Crescent Moon inside -->
+            android:fillColor="#FFFFFF"
+            android:pathData="M36,18 h2 v5 h-2 Z" />
+
         <path
-            android:fillColor="#FFF8E1"
-            android:pathData="M50,42 A12,12 0 1,0 62,54 A10,10 0 1,1 50,42 Z" />
-        <!-- Central Auspicious Star Dot -->
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,24 a3,3 0 1 0 0,-6 a3,3 0 0 0 0,6 Z" />
+
         <path
-            android:fillColor="#FFD700"
-            android:pathData="M56,52 A2,2 0 1,0 56,56 A2,2 0 1,0 56,52 Z" />
+            android:fillColor="#0052CC"
+            android:pathData="M69,16 h4 a2,2 0 0 1 2,2 v8 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M70,18 h2 v5 h-2 Z" />
+
+        <!-- Inner White Calendar Sheet -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M33,34 h42 a3,3 0 0 1 3,3 v40 a7,7 0 0 1 -7,7 h-34 a7,7 0 0 1 -7,-7 v-40 a3,3 0 0 1 3,-3 Z" />
+
+        <!-- Inner Calendar Green/Cyan Header Ribbon -->
+        <path
+            android:pathData="M34,36 h40 v14 h-40 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="34"
+                    android:startY="36"
+                    android:endX="74"
+                    android:endY="50"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#00A896" />
+                    <item android:offset="1.0" android:color="#028090" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Number 15 on calendar -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M46,40.5 h3 v10 h-3 v-7.5 l-2,1.5 v-2.2 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,40.5 h6 v2.5 h-3.8 v1.8 c0.5,-0.3 1.2,-0.5 2,-0.5 c2.2,0 3.8,1.4 3.8,3.3 c0,2.1 -1.8,3.5 -4.2,3.5 c-1.8,0 -3.2,-0.8 -3.8,-1.8 l2,-1.5 c0.4,0.6 1.1,1 1.8,1 c0.9,0 1.6,-0.6 1.6,-1.4 c0,-0.8 -0.7,-1.4 -1.6,-1.4 c-0.8,0 -1.4,0.4 -1.8,0.8 l-2,-0.4 Z" />
+
+        <!-- The Dynamic Vetri Checkmark Sprout -->
+        <path
+            android:pathData="M21,46 C27,40 32,48 39,58 C45,66 50,76 53,78 C57,74 64,56 74,36 C79,26 87,16 97,15 C89,21 83,33 77,49 C70,68 60,84 53,84 C48,84 42,75 36,65 C31,57 26,52 21,46 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="21"
+                    android:startY="46"
+                    android:endX="97"
+                    android:endY="15"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#00A896" />
+                    <item android:offset="0.4" android:color="#00C49F" />
+                    <item android:offset="0.8" android:color="#2BB673" />
+                    <item android:offset="1.0" android:color="#38B000" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Sprout Leaves at Top Right -->
+        <path
+            android:pathData="M92,13 C89,6 96,4 99,5 C102,6 104,12 97,15 C94,16 93,15 92,13 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="92"
+                    android:startY="13"
+                    android:endX="102"
+                    android:endY="5"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#2BB673" />
+                    <item android:offset="1.0" android:color="#55D187" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <path
+            android:pathData="M97,15 C99,11 107,12 108,15 C109,19 103,22 98,18 C96,17 96,16 97,15 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="97"
+                    android:startY="15"
+                    android:endX="108"
+                    android:endY="18"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#2BB673" />
+                    <item android:offset="1.0" android:color="#34C759" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
     </group>
 </vector>

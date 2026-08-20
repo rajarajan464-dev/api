@@ -1,6 +1,6 @@
 {
-  "name": "திரு கணித பஞ்சாங்கம் - API",
-  "description": "Thiru Ganitha (Drik) Panchangam calculation engine & REST API app providing Tithi, Nakshatra, Nalla Neram, Rahu Kalam, Gowri Panchangam & Festivals.",
+  "name": "Vetri Calendar",
+  "description": "Vetri Calendar (வெற்றி காலண்டர்) - Tamil Daily & Monthly Panchangam, Rasi Palan, Gowri & Horai timings.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

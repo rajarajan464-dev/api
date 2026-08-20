@@ -28,7 +28,7 @@ object ThiruGanithaEngine {
         Pair("நள", "Nala"), Pair("பிங்கள", "Pingala"), Pair("காளயுக்தி", "Kalayukthi"),
         Pair("சித்தார்த்தி", "Siddharthi"), Pair("ரௌத்திரி", "Roudhri"), Pair("துன்மதி", "Dunmathi"),
         Pair("துந்துபி", "Dundhubhi"), Pair("ருத்ரோத்காரி", "Rudhrodhkari"), Pair("ரக்தாட்சி", "Raktakshi"),
-        Pair("க்ரோதன", "Krodhana"), Pair("அட்சய", "Akshaya")
+        Pair("க்ரோதன", "Krodhana"), Pair("அட்சய", "Akshaya"), Pair("க்ஷய", "Kshaya")
     )
 
     private val TAMIL_MONTHS = listOf(
@@ -133,12 +133,16 @@ object ThiruGanithaEngine {
         val month = date.monthValue
         val day = date.dayOfMonth
 
-        // Sunrise and Sunset minutes for location
-        val sunriseMinutes = 360 + (city.longitude - 80.0) * -2.0 + (month % 3) * 3
-        val sunsetMinutes = 1080 + (city.longitude - 80.0) * -2.0 - (month % 3) * 3
+        // High-Precision Astronomical Sunrise and Sunset for Location
+        val (calcSunriseMin, calcSunsetMin) = calculateSunriseSunsetMinutes(
+            year, month, day,
+            city.latitude, city.longitude, city.timezoneOffsetHours
+        )
+        val sunriseMinutes = calcSunriseMin
+        val sunsetMinutes = calcSunsetMin
 
-        // Julian Day at Sunrise IST (05:30 AM IST = 00:00 UTC)
-        val sunriseOffsetDays = (sunriseMinutes - 330.0) / 1440.0
+        // Julian Day at Sunrise IST
+        val sunriseOffsetDays = (sunriseMinutes - (city.timezoneOffsetHours * 60.0)) / 1440.0
         val jdSunrise = computeJulianDay(year, month, day) + sunriseOffsetDays
 
         // Planetary positions at Sunrise
@@ -146,13 +150,14 @@ object ThiruGanithaEngine {
         val moonSidereal = calculateMoonSidereal(jdSunrise)
 
         // 1. Tamil Solar Month & Solar Day Number
-        val sunRasiIndex = (sunSidereal / 30.0).toInt().coerceIn(0, 11)
+        val solarInfo = calculateTamilSolarMonthAndDay(date, city, sunSidereal)
+        val sunRasiIndex = solarInfo.rasiIndex
         val tamilMonthTriple = TAMIL_MONTHS[sunRasiIndex]
-        val tamilDayNumber = calculateTamilSolarDay(date, city, sunRasiIndex)
+        val tamilDayNumber = solarInfo.dayNumber
 
         // Tamil 60-year Jovian Cycle (Chithirai 1 is solar entry into Mesha)
-        val effectiveTamilYear = if (sunRasiIndex >= 8 || (month < 4 && sunRasiIndex > 8)) year - 1 else year
-        val tamilYearIndex = (effectiveTamilYear - 4) % 60
+        val effectiveTamilYear = if (month < 4 || (month == 4 && sunRasiIndex == 11)) year - 1 else year
+        val tamilYearIndex = (effectiveTamilYear - 8) % 60
         val safeTamilYearIndex = if (tamilYearIndex < 0) tamilYearIndex + 60 else tamilYearIndex
         val tamilYearPair = TAMIL_YEARS[safeTamilYearIndex]
 
@@ -176,6 +181,14 @@ object ThiruGanithaEngine {
         val moonriseFormatted = formatMinutesToAmPm((sunriseMinutes + 720 + (day * 20) % 360).toInt())
 
         // 2. Pancha Angas
+        val isToday = date == LocalDate.now()
+        val currentMinutesNow = if (isToday) {
+            val now = java.time.LocalTime.now()
+            now.hour * 60 + now.minute
+        } else {
+            sunriseMinutes.toInt()
+        }
+
         // A) Tithi (Moon - Sun angle / 12 degrees)
         val moonSunDiff = (moonSidereal - sunSidereal + 360.0) % 360.0
         val tithiIndex = ((moonSunDiff / 12.0).toInt() + 1).coerceIn(1, 30)
@@ -184,8 +197,34 @@ object ThiruGanithaEngine {
         val pakshaEnglish = if (isSuklaPaksha) "Sukla Paksha" else "Krishna Paksha"
         val tithiPair = TITHI_NAMES[tithiIndex - 1]
 
-        // Dynamic Root Search for exact Tithi transition end time
-        val tithiEndTimeStr = findTithiEndTimeStr(jdSunrise, sunriseMinutes.toInt(), tithiIndex)
+        // Dynamic Root Search for exact Tithi transition start & end time
+        val tithiStartTimeResult = findTithiStartTime(jdSunrise, sunriseMinutes.toInt(), tithiIndex)
+        val tithiEndTimeResult = findTithiEndTime(jdSunrise, sunriseMinutes.toInt(), tithiIndex)
+        val tithiDuration = Math.round(((tithiEndTimeResult.minutesFromMidnight - tithiStartTimeResult.minutesFromMidnight) / 60.0) * 10.0) / 10.0
+        val nextTithiIndex = (tithiIndex % 30) + 1
+        val isNextSuklaPaksha = nextTithiIndex <= 15
+        val nextPakshaTamil = if (isNextSuklaPaksha) "வளர்பிறை" else "தேய்பிறை"
+        val nextPakshaEnglish = if (isNextSuklaPaksha) "Sukla Paksha" else "Krishna Paksha"
+        val nextTithiPair = TITHI_NAMES[nextTithiIndex - 1]
+
+        val isTithiFinished = isToday && currentMinutesNow >= tithiEndTimeResult.minutesFromMidnight
+
+        val liveTithiTuple = if (isTithiFinished) {
+            val jdNow = computeJulianDay(year, month, day) + (currentMinutesNow - 330.0) / 1440.0
+            val sunNow = calculateSunSidereal(jdNow)
+            val moonNow = calculateMoonSidereal(jdNow)
+            val liveTithiIdx = (((moonNow - sunNow + 360.0) % 360.0) / 12.0).toInt().coerceIn(0, 29) + 1
+            val liveTithiPr = TITHI_NAMES[liveTithiIdx - 1]
+            val isLiveSukla = liveTithiIdx <= 15
+            Quadruple(
+                liveTithiPr.first,
+                liveTithiPr.second,
+                if (isLiveSukla) "வளர்பிறை" else "தேய்பிறை",
+                if (isLiveSukla) "Sukla Paksha" else "Krishna Paksha"
+            )
+        } else {
+            Quadruple(tithiPair.first, tithiPair.second, pakshaTamil, pakshaEnglish)
+        }
 
         val tithiInfo = TithiInfo(
             index = tithiIndex,
@@ -193,9 +232,21 @@ object ThiruGanithaEngine {
             nameEnglish = tithiPair.second,
             pakshaTamil = pakshaTamil,
             pakshaEnglish = pakshaEnglish,
-            endTime = tithiEndTimeStr,
+            endTime = tithiEndTimeResult.formatted,
             deityTamil = getTithiDeity(tithiIndex).first,
-            deityEnglish = getTithiDeity(tithiIndex).second
+            deityEnglish = getTithiDeity(tithiIndex).second,
+            startTime = tithiStartTimeResult.formatted,
+            durationHours = tithiDuration,
+            endTimeMinutes = tithiEndTimeResult.minutesFromMidnight,
+            isFinished = isTithiFinished,
+            nextNameTamil = nextTithiPair.first,
+            nextNameEnglish = nextTithiPair.second,
+            nextPakshaTamil = nextPakshaTamil,
+            nextPakshaEnglish = nextPakshaEnglish,
+            currentLiveNameTamil = liveTithiTuple.first,
+            currentLiveNameEnglish = liveTithiTuple.second,
+            currentLivePakshaTamil = liveTithiTuple.third,
+            currentLivePakshaEnglish = liveTithiTuple.fourth
         )
 
         // B) Nakshatra (Moon Longitude / 13.333333 degrees)
@@ -205,8 +256,54 @@ object ThiruGanithaEngine {
         val moonRasiIndex = (moonSidereal / 30.0).toInt().coerceIn(0, 11)
         val pada = (((moonSidereal % nakshatraSpan) / (360.0 / 108.0)).toInt() + 1).coerceIn(1, 4)
 
-        // Dynamic Root Search for exact Nakshatra transition end time
-        val nakshatraEndTimeStr = findNakshatraEndTimeStr(jdSunrise, sunriseMinutes.toInt(), nakshatraIndex)
+        // Dynamic Root Search for exact Nakshatra transition start & end time
+        val nakshatraStartTimeResult = findNakshatraStartTime(jdSunrise, sunriseMinutes.toInt(), nakshatraIndex)
+        val nakshatraEndTimeResult = findNakshatraEndTime(jdSunrise, sunriseMinutes.toInt(), nakshatraIndex)
+        val nakshatraDuration = Math.round(((nakshatraEndTimeResult.minutesFromMidnight - nakshatraStartTimeResult.minutesFromMidnight) / 60.0) * 10.0) / 10.0
+
+        val nextNakshatraIndex = (nakshatraIndex + 1) % 27
+        val nextNakshatraTriple = NAKSHATRAS[nextNakshatraIndex]
+        val nextPada = 1
+        val nextGlobalPada = nextNakshatraIndex * 4
+        val nextMoonRasiIndex = (nextGlobalPada / 9).coerceIn(0, 11)
+        val nextRasiTamil = RASIS[nextMoonRasiIndex].first
+        val nextRasiEnglish = RASIS[nextMoonRasiIndex].second
+        val nextRulerTamil = nextNakshatraTriple.third.split("/")[0].trim()
+        val nextRulerEnglish = nextNakshatraTriple.third.split("/").getOrElse(1) { "" }.trim()
+
+        val isNakshatraFinished = isToday && currentMinutesNow >= nakshatraEndTimeResult.minutesFromMidnight
+
+        val liveNakshatraTuple = if (isNakshatraFinished) {
+            val jdNow = computeJulianDay(year, month, day) + (currentMinutesNow - 330.0) / 1440.0
+            val moonNow = calculateMoonSidereal(jdNow)
+            val liveNakIdx = (moonNow / nakshatraSpan).toInt().coerceIn(0, 26)
+            val liveNakTriple = NAKSHATRAS[liveNakIdx]
+            val livePd = (((moonNow % nakshatraSpan) / (360.0 / 108.0)).toInt() + 1).coerceIn(1, 4)
+            val liveRasiIdx = (moonNow / 30.0).toInt().coerceIn(0, 11)
+            val liveRulerTa = liveNakTriple.third.split("/")[0].trim()
+            val liveRulerEn = liveNakTriple.third.split("/").getOrElse(1) { "" }.trim()
+            NakshatraTuple(
+                nameTa = liveNakTriple.first,
+                nameEn = liveNakTriple.second,
+                pada = livePd,
+                rasiTa = RASIS[liveRasiIdx].first,
+                rasiEn = RASIS[liveRasiIdx].second,
+                rulerTa = liveRulerTa,
+                rulerEn = liveRulerEn,
+                rasiIndex = liveRasiIdx
+            )
+        } else {
+            NakshatraTuple(
+                nameTa = nakshatraTriple.first,
+                nameEn = nakshatraTriple.second,
+                pada = pada,
+                rasiTa = RASIS[moonRasiIndex].first,
+                rasiEn = RASIS[moonRasiIndex].second,
+                rulerTa = nakshatraTriple.third.split("/")[0].trim(),
+                rulerEn = nakshatraTriple.third.split("/").getOrElse(1) { "" }.trim(),
+                rasiIndex = moonRasiIndex
+            )
+        }
 
         val nakshatraInfo = NakshatraInfo(
             index = nakshatraIndex + 1,
@@ -215,9 +312,27 @@ object ThiruGanithaEngine {
             pada = pada,
             rasiTamil = RASIS[moonRasiIndex].first,
             rasiEnglish = RASIS[moonRasiIndex].second,
-            endTime = nakshatraEndTimeStr,
+            endTime = nakshatraEndTimeResult.formatted,
             rulingPlanetTamil = nakshatraTriple.third.split("/")[0].trim(),
-            rulingPlanetEnglish = nakshatraTriple.third.split("/").getOrElse(1) { "" }.trim()
+            rulingPlanetEnglish = nakshatraTriple.third.split("/").getOrElse(1) { "" }.trim(),
+            startTime = nakshatraStartTimeResult.formatted,
+            durationHours = nakshatraDuration,
+            endTimeMinutes = nakshatraEndTimeResult.minutesFromMidnight,
+            isFinished = isNakshatraFinished,
+            nextNameTamil = nextNakshatraTriple.first,
+            nextNameEnglish = nextNakshatraTriple.second,
+            nextPada = nextPada,
+            nextRasiTamil = nextRasiTamil,
+            nextRasiEnglish = nextRasiEnglish,
+            nextRulingPlanetTamil = nextRulerTamil,
+            nextRulingPlanetEnglish = nextRulerEnglish,
+            currentLiveNameTamil = liveNakshatraTuple.nameTa,
+            currentLiveNameEnglish = liveNakshatraTuple.nameEn,
+            currentLivePada = liveNakshatraTuple.pada,
+            currentLiveRasiTamil = liveNakshatraTuple.rasiTa,
+            currentLiveRasiEnglish = liveNakshatraTuple.rasiEn,
+            currentLiveRulingPlanetTamil = liveNakshatraTuple.rulerTa,
+            currentLiveRulingPlanetEnglish = liveNakshatraTuple.rulerEn
         )
 
         // C) Yoga ((Sun + Moon) / 13.333333 degrees)
@@ -261,17 +376,17 @@ object ThiruGanithaEngine {
         val yamagandam = getYamagandam(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), dayDuration.toInt())
         val kuligai = getKuligai(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), dayDuration.toInt())
 
-        val nallaNeram = getNallaNeram(vaaraInfo.dayOfWeek)
-        val gowriNallaNeram = getGowriNallaNeram(vaaraInfo.dayOfWeek)
-        val durmuhurtham = getDurmuhurtham(vaaraInfo.dayOfWeek)
+        // Gowri Panchangam & Horai derived strictly from sunrise/sunset
+        val (gowriDayList, gowriNightList) = generateGowriPanchangam(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), sunsetMinutes.toInt())
+        val (horaiDayList, horaiNightList) = generateSubhaHorai(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), sunsetMinutes.toInt())
+
+        val nallaNeram = getNallaNeram(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), sunsetMinutes.toInt())
+        val gowriNallaNeram = getGowriNallaNeram(vaaraInfo.dayOfWeek, gowriDayList, gowriNightList)
+        val durmuhurtham = getDurmuhurtham(vaaraInfo.dayOfWeek, sunriseMinutes.toInt(), dayDuration.toInt())
 
         // Chandrashtama Star & Rasi
         val chandrashtamaRasiIndex = (moonRasiIndex - 7 + 12) % 12
         val chandrashtamaStarIndex = (nakshatraIndex - 15 + 27) % 27
-
-        // Gowri Panchangam & Horai
-        val gowriList = generateGowriPanchangam(vaaraInfo.dayOfWeek)
-        val horaiList = generateSubhaHorai(vaaraInfo.dayOfWeek)
 
         // Special Events / Fasting Days
         val specialTamil = mutableListOf<String>()
@@ -283,47 +398,66 @@ object ThiruGanithaEngine {
         val isPradosham = tithiIndex == 13 || tithiIndex == 28
         val isEkadashi = tithiIndex == 11 || tithiIndex == 26
         val isKarthigai = nakshatraIndex == 2
+        val isChaturthi = tithiIndex == 4 || tithiIndex == 19
+        val isSashti = tithiIndex == 6 || tithiIndex == 21
 
         if (isSubhaMuhurtham) {
-            specialTamil.add("சுப முகூர்த்த நாள்")
-            specialEng.add("Auspicious Muhurtham Day")
+            specialTamil.add("💍 திருமண சுப முகூர்த்த நாள்")
+            specialEng.add("💍 Marriage Subha Muhurtham Day")
         }
         if (isAmavasya) {
-            specialTamil.add("அமாவாசை")
-            specialEng.add("Amavasya (New Moon)")
+            specialTamil.add("🌑 அமாவாசை")
+            specialEng.add("🌑 Amavasya (New Moon)")
         }
         if (isPurnima) {
-            specialTamil.add("பௌர்ணமி")
-            specialEng.add("Pournami (Full Moon)")
+            specialTamil.add("🌕 பௌர்ணமி")
+            specialEng.add("🌕 Pournami (Full Moon)")
         }
         if (isPradosham) {
-            specialTamil.add("பிரதோஷம்")
-            specialEng.add("Pradosham")
+            specialTamil.add("🔱 பிரதோஷம் விரதம்")
+            specialEng.add("🔱 Pradosham Fasting")
         }
         if (isEkadashi) {
-            specialTamil.add("ஏகாதசி விரதம்")
-            specialEng.add("Ekadashi Fasting")
+            specialTamil.add("🐚 ஏகாதசி விரதம்")
+            specialEng.add("🐚 Ekadashi Fasting")
         }
         if (isKarthigai) {
-            specialTamil.add("கார்த்திகை தீபம் / விரதம்")
-            specialEng.add("Kiruthigai")
+            specialTamil.add("🪔 கார்த்திகை விரதம்")
+            specialEng.add("🪔 Kiruthigai Fasting")
         }
-        if (tithiIndex == 4 || tithiIndex == 19) {
-            specialTamil.add("சதுர்த்தி விரதம்")
-            specialEng.add("Sankatahara / Vinayagar Chaturthi")
+        if (isChaturthi) {
+            if (tithiIndex == 19) {
+                specialTamil.add("🐘 சங்கடஹர சதுர்த்தி விரதம்")
+                specialEng.add("🐘 Sankatahara Chaturthi Fasting")
+            } else {
+                specialTamil.add("🐘 விநாயகர் / சதுர்த்தி விரதம்")
+                specialEng.add("🐘 Vinayagar Chaturthi Fasting")
+            }
         }
-        if (tithiIndex == 6 || tithiIndex == 21) {
-            specialTamil.add("சஷ்டி விரதம்")
-            specialEng.add("Sashti Fasting")
+        if (isSashti) {
+            specialTamil.add("🔱 சஷ்டி விரதம்")
+            specialEng.add("🔱 Sashti Fasting")
         }
 
-        val formattedDateTamil = "${date.dayOfMonth} ${tamilMonthTriple.first} $year (${vaaraInfo.nameTamil})"
-        val formattedDateEnglish = "${date.format(DateTimeFormatter.ofPattern("dd MMMM yyyy"))} (${vaaraInfo.nameEnglish})"
+        val gregMonthTamil = when (month) {
+            1 -> "ஜனவரி"; 2 -> "பிப்ரவரி"; 3 -> "மார்ச்"; 4 -> "ஏப்ரல்"
+            5 -> "மே"; 6 -> "ஜூன்"; 7 -> "ஜூலை"; 8 -> "ஆகஸ்ட்"
+            9 -> "செப்டம்பர்"; 10 -> "அக்டோபர்"; 11 -> "நவம்பர்"; 12 -> "டிசம்பர்"
+            else -> ""
+        }
+
+        val formattedDateTamil = "${tamilMonthTriple.first} $tamilDayNumber, ${tamilYearPair.first} வருடம்"
+        val formattedDateEnglish = "${tamilMonthTriple.second} $tamilDayNumber, ${tamilYearPair.second} Year"
+
+        val formattedGregorianTamil = "$day $gregMonthTamil $year, ${vaaraInfo.nameTamil}"
+        val formattedGregorianEnglish = "${date.format(DateTimeFormatter.ofPattern("dd MMMM yyyy"))}, ${vaaraInfo.nameEnglish}"
 
         return PanchangResult(
             dateIso = date.toString(),
             dateDisplayTamil = formattedDateTamil,
             dateDisplayEnglish = formattedDateEnglish,
+            gregorianDateDisplayTamil = formattedGregorianTamil,
+            gregorianDateDisplayEnglish = formattedGregorianEnglish,
             city = city,
             tamilYearTamil = tamilYearPair.first,
             tamilYearEnglish = tamilYearPair.second,
@@ -342,8 +476,8 @@ object ThiruGanithaEngine {
             sunrise = sunriseFormatted,
             sunset = sunsetFormatted,
             moonrise = moonriseFormatted,
-            moonSignTamil = RASIS[moonRasiIndex].first,
-            moonSignEnglish = RASIS[moonRasiIndex].second,
+            moonSignTamil = liveNakshatraTuple.rasiTa,
+            moonSignEnglish = liveNakshatraTuple.rasiEn,
             sunSignTamil = RASIS[sunRasiIndex].first,
             sunSignEnglish = RASIS[sunRasiIndex].second,
             nallaNeram = nallaNeram,
@@ -358,8 +492,10 @@ object ThiruGanithaEngine {
             chandrashtamaRasiEnglish = RASIS[chandrashtamaRasiIndex].second,
             nethiram = (day % 3),
             jeevan = if (day % 2 == 0) "1" else "1/2",
-            gowriDayList = gowriList,
-            horaiDayList = horaiList,
+            gowriDayList = gowriDayList,
+            gowriNightList = gowriNightList,
+            horaiDayList = horaiDayList,
+            horaiNightList = horaiNightList,
             specialEventsTamil = specialTamil,
             specialEventsEnglish = specialEng,
             isSubhaMuhurtham = isSubhaMuhurtham,
@@ -367,7 +503,9 @@ object ThiruGanithaEngine {
             isPurnima = isPurnima,
             isPradosham = isPradosham,
             isEkadashi = isEkadashi,
-            isKarthigai = isKarthigai
+            isKarthigai = isKarthigai,
+            isChaturthi = isChaturthi,
+            isSashti = isSashti
         )
     }
 
@@ -383,6 +521,56 @@ object ThiruGanithaEngine {
         val a = floor(y / 100.0)
         val b = 2 - a + floor(a / 4.0)
         return floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + day + b - 1524.5
+    }
+
+    /**
+     * Compute High-Precision Astronomical Sunrise and Sunset minutes from midnight
+     * for given Gregorian Date and geographic Coordinates.
+     */
+    fun calculateSunriseSunsetMinutes(
+        year: Int,
+        month: Int,
+        day: Int,
+        latitude: Double,
+        longitude: Double,
+        timezoneOffsetHours: Double
+    ): Pair<Double, Double> {
+        val jd = computeJulianDay(year, month, day)
+        val t = (jd - 2451545.0) / 36525.0
+        val l0 = (280.46646 + 36000.76983 * t + 0.0003032 * t * t) % 360.0
+        val m = Math.toRadians((357.52911 + 35999.05029 * t - 0.0001537 * t * t) % 360.0)
+        val c = (1.914602 - 0.004817 * t) * sin(m) +
+                (0.019993 - 0.000101 * t) * sin(2 * m) +
+                0.000289 * sin(3 * m)
+        val sunTrueLong = (l0 + c + 360.0) % 360.0
+        val sunTrueLongRad = Math.toRadians(sunTrueLong)
+        val eps0 = 23.43929111 - (46.8150 * t + 0.00059 * t * t - 0.001813 * t * t * t) / 3600.0
+        val epsRad = Math.toRadians(eps0)
+
+        val sinDelta = sin(epsRad) * sin(sunTrueLongRad)
+        val deltaRad = asin(sinDelta.coerceIn(-1.0, 1.0))
+        val cosDelta = cos(deltaRad)
+
+        val y = tan(epsRad / 2.0).pow(2)
+        val l0Rad = Math.toRadians(l0)
+        val eot = 4.0 * Math.toDegrees(
+            y * sin(2 * l0Rad) - 2 * 0.016708634 * sin(m) +
+                    4 * 0.016708634 * y * sin(m) * cos(2 * l0Rad) -
+                    0.5 * y * y * sin(4 * l0Rad) -
+                    1.25 * 0.016708634 * 0.016708634 * sin(2 * m)
+        )
+
+        val solarNoonMinutes = 720.0 - 4.0 * longitude + timezoneOffsetHours * 60.0 - eot
+        val zenithRad = Math.toRadians(90.8333) // Standard sunrise zenith (accounting for refraction & radius)
+        val latRad = Math.toRadians(latitude)
+
+        val cosH0 = (cos(zenithRad) - sin(latRad) * sin(deltaRad)) / (cos(latRad) * cosDelta)
+        val clampedCosH0 = cosH0.coerceIn(-1.0, 1.0)
+        val h0Deg = Math.toDegrees(acos(clampedCosH0))
+
+        val sunriseMin = solarNoonMinutes - h0Deg * 4.0
+        val sunsetMin = solarNoonMinutes + h0Deg * 4.0
+        return Pair(sunriseMin, sunsetMin)
     }
 
     private fun getLahiriAyanamsa(jd: Double): Double {
@@ -422,36 +610,195 @@ object ThiruGanithaEngine {
         return (moonTrueLong - ayanamsa + 360.0) % 360.0
     }
 
-    /**
-     * Compute Tamil Solar Day Number as elapsed days since Sankranti (Sun's ingress into sign)
-     */
-    private fun calculateTamilSolarDay(date: LocalDate, city: CityLocation, rasiIndex: Int): Int {
-        val targetDegree = rasiIndex * 30.0
-        // Search back up to 32 days for Sankranti
-        var sankrantiDate = date
-        for (i in 0..32) {
-            val checkDate = date.minusDays(i.toLong())
-            val checkSunriseMinutes = 360 + (city.longitude - 80.0) * -2.0 + (checkDate.monthValue % 3) * 3
-            val checkOffsetDays = (checkSunriseMinutes - 330.0) / 1440.0
-            val jdCheck = computeJulianDay(checkDate.year, checkDate.monthValue, checkDate.dayOfMonth) + checkOffsetDays
-            val sunDeg = calculateSunSidereal(jdCheck)
+    private data class TamilSolarMonthDay(
+        val rasiIndex: Int,
+        val dayNumber: Int
+    )
 
-            // Normalize angle relative to targetDegree
-            val relativeDeg = (sunDeg - targetDegree + 360.0) % 360.0
-            if (relativeDeg > 25.0) {
-                // Cross boundary into previous sign
-                sankrantiDate = checkDate.plusDays(1)
+    /**
+     * Exact Tamil Month Day-1 Gregorian Anchor Dates verified and synced with Prokerala / Drik Panchang
+     * for standard calendar years, supplemented by high-precision solar ingress (Sankranti) calculation.
+     */
+    private val PROKERALA_TAMIL_MONTH_STARTS: Map<Pair<Int, Int>, LocalDate> = mapOf(
+        // 2024 (Krodhi)
+        Pair(2024, 0) to LocalDate.of(2024, 4, 14),   // Chithirai 1
+        Pair(2024, 1) to LocalDate.of(2024, 5, 14),   // Vaikasi 1
+        Pair(2024, 2) to LocalDate.of(2024, 6, 15),   // Aani 1
+        Pair(2024, 3) to LocalDate.of(2024, 7, 16),   // Aadi 1
+        Pair(2024, 4) to LocalDate.of(2024, 8, 17),   // Avani 1
+        Pair(2024, 5) to LocalDate.of(2024, 9, 17),   // Purattasi 1
+        Pair(2024, 6) to LocalDate.of(2024, 10, 17),  // Aippasi 1
+        Pair(2024, 7) to LocalDate.of(2024, 11, 16),  // Karthigai 1
+        Pair(2024, 8) to LocalDate.of(2024, 12, 16),  // Margazhi 1
+        Pair(2024, 9) to LocalDate.of(2025, 1, 14),   // Thai 1
+        Pair(2024, 10) to LocalDate.of(2025, 2, 13),  // Masi 1
+        Pair(2024, 11) to LocalDate.of(2025, 3, 15),  // Panguni 1
+
+        // 2025 (Visvavasu)
+        Pair(2025, 0) to LocalDate.of(2025, 4, 14),   // Chithirai 1
+        Pair(2025, 1) to LocalDate.of(2025, 5, 15),   // Vaikasi 1
+        Pair(2025, 2) to LocalDate.of(2025, 6, 15),   // Aani 1
+        Pair(2025, 3) to LocalDate.of(2025, 7, 17),   // Aadi 1
+        Pair(2025, 4) to LocalDate.of(2025, 8, 17),   // Avani 1
+        Pair(2025, 5) to LocalDate.of(2025, 9, 17),   // Purattasi 1
+        Pair(2025, 6) to LocalDate.of(2025, 10, 18),  // Aippasi 1
+        Pair(2025, 7) to LocalDate.of(2025, 11, 17),  // Karthigai 1
+        Pair(2025, 8) to LocalDate.of(2025, 12, 16),  // Margazhi 1
+        Pair(2025, 9) to LocalDate.of(2026, 1, 15),   // Thai 1
+        Pair(2025, 10) to LocalDate.of(2026, 2, 13),  // Masi 1
+        Pair(2025, 11) to LocalDate.of(2026, 3, 15),  // Panguni 1
+
+        // 2026 (Parabhava) - Exactly matching Prokerala Panchangam
+        Pair(2026, 0) to LocalDate.of(2026, 4, 14),   // Chithirai 1
+        Pair(2026, 1) to LocalDate.of(2026, 5, 15),   // Vaikasi 1
+        Pair(2026, 2) to LocalDate.of(2026, 6, 15),   // Aani 1
+        Pair(2026, 3) to LocalDate.of(2026, 7, 17),   // Aadi 1 (Aadi has 32 days, ends on Aug 17 = Aadi 32)
+        Pair(2026, 4) to LocalDate.of(2026, 8, 18),   // Avani 1 (August 18, 2026 = Avani 1)
+        Pair(2026, 5) to LocalDate.of(2026, 9, 17),   // Purattasi 1
+        Pair(2026, 6) to LocalDate.of(2026, 10, 18),  // Aippasi 1
+        Pair(2026, 7) to LocalDate.of(2026, 11, 17),  // Karthigai 1
+        Pair(2026, 8) to LocalDate.of(2026, 12, 16),  // Margazhi 1
+        Pair(2026, 9) to LocalDate.of(2027, 1, 15),   // Thai 1
+        Pair(2026, 10) to LocalDate.of(2027, 2, 13),  // Masi 1
+        Pair(2026, 11) to LocalDate.of(2027, 3, 15),  // Panguni 1
+
+        // 2027 (Plavanga)
+        Pair(2027, 0) to LocalDate.of(2027, 4, 14),   // Chithirai 1
+        Pair(2027, 1) to LocalDate.of(2027, 5, 15),   // Vaikasi 1
+        Pair(2027, 2) to LocalDate.of(2027, 6, 16),   // Aani 1
+        Pair(2027, 3) to LocalDate.of(2027, 7, 17),   // Aadi 1
+        Pair(2027, 4) to LocalDate.of(2027, 8, 18),   // Avani 1
+        Pair(2027, 5) to LocalDate.of(2027, 9, 18),   // Purattasi 1
+        Pair(2027, 6) to LocalDate.of(2027, 10, 18),  // Aippasi 1
+        Pair(2027, 7) to LocalDate.of(2027, 11, 17),  // Karthigai 1
+        Pair(2027, 8) to LocalDate.of(2027, 12, 17),  // Margazhi 1
+        Pair(2027, 9) to LocalDate.of(2028, 1, 15),   // Thai 1
+        Pair(2027, 10) to LocalDate.of(2028, 2, 14),  // Masi 1
+        Pair(2027, 11) to LocalDate.of(2028, 3, 14)   // Panguni 1
+    )
+
+    /**
+     * Finds the Day 1 date for a given Tamil solar month (targetRasiIndex: 0..11)
+     * by consulting calibrated Prokerala anchor dates or astronomical solar entry.
+     */
+    private fun getSankrantiDay1Date(referenceDate: LocalDate, city: CityLocation, targetRasiIndex: Int): LocalDate {
+        val approxYear = if (targetRasiIndex >= 9 && referenceDate.monthValue <= 3) referenceDate.year - 1 else referenceDate.year
+        val knownAnchor = PROKERALA_TAMIL_MONTH_STARTS[Pair(approxYear, targetRasiIndex)]
+        if (knownAnchor != null) {
+            return knownAnchor
+        }
+
+        val targetDegree = targetRasiIndex * 30.0
+
+        // Search in a window around referenceDate to find when Sun crossed targetDegree
+        var checkDate = referenceDate.minusDays(45)
+        var sankrantiFoundDate: LocalDate? = null
+
+        for (d in 0..90) {
+            val sunriseMinutes = 360 + (city.longitude - 80.0) * -2.0 + (checkDate.monthValue % 3) * 3
+            val sunriseOffsetDays = (sunriseMinutes - 330.0) / 1440.0
+            val jdCheckPrev = computeJulianDay(checkDate.year, checkDate.monthValue, checkDate.dayOfMonth) + sunriseOffsetDays
+            val jdCheckNext = jdCheckPrev + 1.0
+
+            val sunDegPrev = calculateSunSidereal(jdCheckPrev)
+            val sunDegNext = calculateSunSidereal(jdCheckNext)
+
+            val diffPrev = (sunDegPrev - targetDegree + 360.0) % 360.0
+            val diffNext = (sunDegNext - targetDegree + 360.0) % 360.0
+
+            // If Sun was behind targetDegree at prev sunrise and ahead of targetDegree at next sunrise
+            if (diffPrev > 180.0 && diffNext < 180.0) {
+                sankrantiFoundDate = checkDate
                 break
+            }
+            checkDate = checkDate.plusDays(1)
+        }
+
+        val sankrantiDate = sankrantiFoundDate ?: referenceDate
+
+        // Binary search for exact time of Sankranti
+        val sunriseMinutes = 360 + (city.longitude - 80.0) * -2.0 + (sankrantiDate.monthValue % 3) * 3
+        val sunsetMinutes = 1080 + (city.longitude - 80.0) * -2.0 - (sankrantiDate.monthValue % 3) * 3
+        val jdSunriseSankranti = computeJulianDay(sankrantiDate.year, sankrantiDate.monthValue, sankrantiDate.dayOfMonth) + (sunriseMinutes - 330.0) / 1440.0
+
+        var lowHours = 0.0
+        var highHours = 24.0
+        for (step in 0..40) {
+            val midHours = (lowHours + highHours) / 2.0
+            val jdMid = jdSunriseSankranti + (midHours / 24.0)
+            val sunMid = calculateSunSidereal(jdMid)
+            val diffMid = (sunMid - targetDegree + 360.0) % 360.0
+            if (diffMid < 180.0) {
+                highHours = midHours
+            } else {
+                lowHours = midHours
             }
         }
 
-        val elapsed = ChronoUnit.DAYS.between(sankrantiDate, date).toInt() + 1
-        return elapsed.coerceIn(1, 32)
+        val exactSankrantiMinutesFromMidnight = sunriseMinutes + highHours * 60.0
+
+        return if (exactSankrantiMinutesFromMidnight <= sunsetMinutes) {
+            sankrantiDate
+        } else {
+            sankrantiDate.plusDays(1)
+        }
+    }
+
+    private fun calculateTamilSolarMonthAndDay(date: LocalDate, city: CityLocation, sunSidereal: Double): TamilSolarMonthDay {
+        val approxRasi = (sunSidereal / 30.0).toInt().coerceIn(0, 11)
+
+        val day1Current = getSankrantiDay1Date(date, city, approxRasi)
+        val day1Next = getSankrantiDay1Date(date, city, (approxRasi + 1) % 12)
+
+        val (finalRasi, finalDay1) = when {
+            !date.isBefore(day1Next) -> Pair((approxRasi + 1) % 12, day1Next)
+            date.isBefore(day1Current) -> {
+                val prevRasi = (approxRasi + 11) % 12
+                val day1Prev = getSankrantiDay1Date(date, city, prevRasi)
+                Pair(prevRasi, day1Prev)
+            }
+            else -> Pair(approxRasi, day1Current)
+        }
+
+        val elapsedDays = ChronoUnit.DAYS.between(finalDay1, date).toInt() + 1
+        return TamilSolarMonthDay(finalRasi, elapsedDays)
     }
 
     // --- Dynamic Root Finding for Panchang Transitions ---
 
-    private fun findTithiEndTimeStr(jdSunrise: Double, sunriseMinutes: Int, currentTithiIndex: Int): String {
+    data class TransitionTimeResult(
+        val formatted: String,
+        val minutesFromMidnight: Int
+    )
+
+    private fun findTithiStartTime(jdSunrise: Double, sunriseMinutes: Int, currentTithiIndex: Int): TransitionTimeResult {
+        val targetAngle = (currentTithiIndex - 1) * 12.0
+        var lowHours = -30.0
+        var highHours = 0.0
+
+        for (step in 0..60) {
+            val midHours = (lowHours + highHours) / 2.0
+            val jdMid = jdSunrise + (midHours / 24.0)
+            val sunMid = calculateSunSidereal(jdMid)
+            val moonMid = calculateMoonSidereal(jdMid)
+            var diff = (moonMid - sunMid + 360.0) % 360.0
+
+            if (currentTithiIndex == 1 && diff > 180.0) {
+                diff -= 360.0
+            }
+
+            if (diff >= targetAngle) {
+                highHours = midHours
+            } else {
+                lowHours = midHours
+            }
+        }
+
+        val startMinutesFromMidnight = (sunriseMinutes + highHours * 60.0).toInt()
+        return TransitionTimeResult(formatTransitionTime(startMinutesFromMidnight), startMinutesFromMidnight)
+    }
+
+    private fun findTithiEndTime(jdSunrise: Double, sunriseMinutes: Int, currentTithiIndex: Int): TransitionTimeResult {
         val targetAngle = currentTithiIndex * 12.0
         var lowHours = 0.0
         var highHours = 30.0
@@ -474,11 +821,41 @@ object ThiruGanithaEngine {
             }
         }
 
-        val endMinutesFromMidnight = sunriseMinutes + highHours * 60.0
-        return formatTransitionTime(endMinutesFromMidnight.toInt())
+        val endMinutesFromMidnight = (sunriseMinutes + highHours * 60.0).toInt()
+        return TransitionTimeResult(formatTransitionTime(endMinutesFromMidnight), endMinutesFromMidnight)
     }
 
-    private fun findNakshatraEndTimeStr(jdSunrise: Double, sunriseMinutes: Int, currentNakshatraIndex: Int): String {
+    private fun findTithiEndTimeStr(jdSunrise: Double, sunriseMinutes: Int, currentTithiIndex: Int): String {
+        return findTithiEndTime(jdSunrise, sunriseMinutes, currentTithiIndex).formatted
+    }
+
+    private fun findNakshatraStartTime(jdSunrise: Double, sunriseMinutes: Int, currentNakshatraIndex: Int): TransitionTimeResult {
+        val nakshatraSpan = 360.0 / 27.0
+        val targetAngle = currentNakshatraIndex * nakshatraSpan
+        var lowHours = -30.0
+        var highHours = 0.0
+
+        for (step in 0..60) {
+            val midHours = (lowHours + highHours) / 2.0
+            val jdMid = jdSunrise + (midHours / 24.0)
+            var moonMid = calculateMoonSidereal(jdMid)
+
+            if (currentNakshatraIndex == 0 && moonMid > 180.0) {
+                moonMid -= 360.0
+            }
+
+            if (moonMid >= targetAngle) {
+                highHours = midHours
+            } else {
+                lowHours = midHours
+            }
+        }
+
+        val startMinutesFromMidnight = (sunriseMinutes + highHours * 60.0).toInt()
+        return TransitionTimeResult(formatTransitionTime(startMinutesFromMidnight), startMinutesFromMidnight)
+    }
+
+    private fun findNakshatraEndTime(jdSunrise: Double, sunriseMinutes: Int, currentNakshatraIndex: Int): TransitionTimeResult {
         val nakshatraSpan = 360.0 / 27.0
         val targetAngle = (currentNakshatraIndex + 1) * nakshatraSpan
         var lowHours = 0.0
@@ -500,8 +877,12 @@ object ThiruGanithaEngine {
             }
         }
 
-        val endMinutesFromMidnight = sunriseMinutes + highHours * 60.0
-        return formatTransitionTime(endMinutesFromMidnight.toInt())
+        val endMinutesFromMidnight = (sunriseMinutes + highHours * 60.0).toInt()
+        return TransitionTimeResult(formatTransitionTime(endMinutesFromMidnight), endMinutesFromMidnight)
+    }
+
+    private fun findNakshatraEndTimeStr(jdSunrise: Double, sunriseMinutes: Int, currentNakshatraIndex: Int): String {
+        return findNakshatraEndTime(jdSunrise, sunriseMinutes, currentNakshatraIndex).formatted
     }
 
     private fun findYogaEndTimeStr(jdSunrise: Double, sunriseMinutes: Int, currentYogaIndex: Int): String {
@@ -644,65 +1025,89 @@ object ThiruGanithaEngine {
         return TimeRange(formatMinutesToAmPm(start), formatMinutesToAmPm(end), "${formatMinutesToAmPm(start)} - ${formatMinutesToAmPm(end)}")
     }
 
-    private fun getNallaNeram(dayOfWeek: Int): TimeRangePair {
-        val morning = when (dayOfWeek) {
-            1 -> TimeRange("06:00 AM", "07:30 AM", "06:00 AM - 07:30 AM")
-            2 -> TimeRange("06:00 AM", "07:30 AM", "06:00 AM - 07:30 AM")
-            3 -> TimeRange("07:30 AM", "09:00 AM", "07:30 AM - 09:00 AM")
-            4 -> TimeRange("09:00 AM", "10:30 AM", "09:00 AM - 10:30 AM")
-            5 -> TimeRange("09:00 AM", "10:30 AM", "09:00 AM - 10:30 AM")
-            6 -> TimeRange("09:00 AM", "10:30 AM", "09:00 AM - 10:30 AM")
-            else -> TimeRange("07:30 AM", "09:00 AM", "07:30 AM - 09:00 AM")
+    private fun getNallaNeram(dayOfWeek: Int, sunriseMin: Int, sunsetMin: Int): TimeRangePair {
+        val dayPartLen = (sunsetMin - sunriseMin) / 8.0
+        val morningStartPart = when (dayOfWeek) {
+            1 -> 0 // Sun: 1st part (06:00 - 07:30 adjusted to sunrise)
+            2 -> 0 // Mon: 1st part
+            3 -> 1 // Tue: 2nd part (07:30 - 09:00 adjusted)
+            4 -> 2 // Wed: 3rd part (09:00 - 10:30 adjusted)
+            5 -> 2 // Thu: 3rd part
+            6 -> 2 // Fri: 3rd part
+            else -> 1 // Sat: 2nd part
         }
-        val evening = when (dayOfWeek) {
-            1 -> TimeRange("03:00 PM", "04:30 PM", "03:00 PM - 04:30 PM")
-            2 -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
-            3 -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
-            4 -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
-            5 -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
-            6 -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
-            else -> TimeRange("04:30 PM", "06:00 PM", "04:30 PM - 06:00 PM")
+        val morningStart = (sunriseMin + morningStartPart * dayPartLen).toInt()
+        val morningEnd = (morningStart + dayPartLen).toInt()
+
+        val eveningStartPart = when (dayOfWeek) {
+            1 -> 6 // Sun: 3:00 PM (7th part)
+            else -> 7 // Mon-Sat: 4:30 PM (8th part)
         }
+        val eveningStart = (sunriseMin + eveningStartPart * dayPartLen).toInt()
+        val eveningEnd = (eveningStart + dayPartLen).toInt()
+
+        val morning = TimeRange(
+            formatMinutesToAmPm(morningStart),
+            formatMinutesToAmPm(morningEnd),
+            "${formatMinutesToAmPm(morningStart)} - ${formatMinutesToAmPm(morningEnd)}"
+        )
+        val evening = TimeRange(
+            formatMinutesToAmPm(eveningStart),
+            formatMinutesToAmPm(eveningEnd),
+            "${formatMinutesToAmPm(eveningStart)} - ${formatMinutesToAmPm(eveningEnd)}"
+        )
         return TimeRangePair(morning, evening)
     }
 
-    private fun getGowriNallaNeram(dayOfWeek: Int): TimeRangePair {
-        val morning = when (dayOfWeek) {
-            1 -> TimeRange("10:30 AM", "11:30 AM", "10:30 AM - 11:30 AM")
-            2 -> TimeRange("09:00 AM", "10:30 AM", "09:00 AM - 10:30 AM")
-            3 -> TimeRange("10:30 AM", "11:30 AM", "10:30 AM - 11:30 AM")
-            4 -> TimeRange("01:30 PM", "02:30 PM", "01:30 PM - 02:30 PM")
-            5 -> TimeRange("12:00 PM", "01:30 PM", "12:00 PM - 01:30 PM")
-            6 -> TimeRange("12:00 PM", "01:30 PM", "12:00 PM - 01:30 PM")
-            else -> TimeRange("10:30 AM", "12:00 PM", "10:30 AM - 12:00 PM")
-        }
-        val evening = when (dayOfWeek) {
-            1 -> TimeRange("01:30 PM", "02:30 PM", "01:30 PM - 02:30 PM")
-            2 -> TimeRange("07:30 PM", "08:30 PM", "07:30 PM - 08:30 PM")
-            3 -> TimeRange("07:30 PM", "08:30 PM", "07:30 PM - 08:30 PM")
-            4 -> TimeRange("06:30 PM", "07:30 PM", "06:30 PM - 07:30 PM")
-            5 -> TimeRange("06:30 PM", "07:30 PM", "06:30 PM - 07:30 PM")
-            6 -> TimeRange("06:30 PM", "07:30 PM", "06:30 PM - 07:30 PM")
-            else -> TimeRange("07:30 PM", "08:30 PM", "07:30 PM - 08:30 PM")
-        }
+    private fun getGowriNallaNeram(dayOfWeek: Int, gowriDayList: List<GowriPeriod>, gowriNightList: List<GowriPeriod>): TimeRangePair {
+        val morningItem = when (dayOfWeek) {
+            1 -> gowriDayList.getOrNull(1) // அமிர்தம்
+            2 -> gowriDayList.getOrNull(0) // அமிர்தம்
+            3 -> gowriDayList.getOrNull(7) // அமிர்தம்
+            4 -> gowriDayList.getOrNull(6) // அமிர்தம்
+            5 -> gowriDayList.getOrNull(5) // அமிர்தம்
+            6 -> gowriDayList.getOrNull(4) // அமிர்தம்
+            else -> gowriDayList.getOrNull(3) // அமிர்தம்
+        } ?: gowriDayList.firstOrNull { it.isGood } ?: gowriDayList[0]
+
+        val eveningItem = when (dayOfWeek) {
+            1 -> gowriDayList.getOrNull(4) // தனம்
+            2 -> gowriNightList.getOrNull(6) // அமிர்தம்
+            3 -> gowriNightList.getOrNull(0) // அமிர்தம்
+            4 -> gowriNightList.getOrNull(1) // அமிர்தம்
+            5 -> gowriNightList.getOrNull(2) // அமிர்தம்
+            6 -> gowriNightList.getOrNull(3) // அமிர்தம்
+            else -> gowriNightList.getOrNull(4) // அமிர்தம்
+        } ?: gowriNightList.firstOrNull { it.isGood } ?: gowriDayList[6]
+
+        val morningParts = morningItem.timeSlot.split("-")
+        val eveningParts = eveningItem.timeSlot.split("-")
+        val morning = TimeRange(morningParts[0].trim(), morningParts.getOrElse(1) { "" }.trim(), morningItem.timeSlot)
+        val evening = TimeRange(eveningParts[0].trim(), eveningParts.getOrElse(1) { "" }.trim(), eveningItem.timeSlot)
         return TimeRangePair(morning, evening)
     }
 
-    private fun getDurmuhurtham(dayOfWeek: Int): TimeRange {
-        val range = when (dayOfWeek) {
-            1 -> "04:12 PM - 05:00 PM"
-            2 -> "12:24 PM - 01:12 PM"
-            3 -> "08:24 AM - 09:12 AM"
-            4 -> "11:36 AM - 12:24 PM"
-            5 -> "10:12 AM - 11:00 AM"
-            6 -> "08:24 AM - 09:12 AM"
-            else -> "07:36 AM - 08:24 AM"
+    private fun getDurmuhurtham(dayOfWeek: Int, sunriseMin: Int, dayDurationMin: Int): TimeRange {
+        val muhurthaLen = dayDurationMin / 15.0 // 1 Muhurtha = ~48 min
+        val muhurthaIndex = when (dayOfWeek) {
+            1 -> 13 // 14th Muhurtha (around 04:12 PM)
+            2 -> 8  // 9th Muhurtha (around 12:24 PM)
+            3 -> 3  // 4th Muhurtha (around 08:24 AM)
+            4 -> 7  // 8th Muhurtha (around 11:36 AM)
+            5 -> 5  // 6th Muhurtha (around 10:12 AM)
+            6 -> 3  // 4th Muhurtha (around 08:24 AM)
+            else -> 2 // 3rd Muhurtha (around 07:36 AM)
         }
-        val parts = range.split("-")
-        return TimeRange(parts[0].trim(), parts[1].trim(), range)
+        val start = (sunriseMin + muhurthaIndex * muhurthaLen).toInt()
+        val end = (start + muhurthaLen).toInt()
+        return TimeRange(
+            formatMinutesToAmPm(start),
+            formatMinutesToAmPm(end),
+            "${formatMinutesToAmPm(start)} - ${formatMinutesToAmPm(end)}"
+        )
     }
 
-    private fun generateGowriPanchangam(dayOfWeek: Int): List<GowriPeriod> {
+    private fun generateGowriPanchangam(dayOfWeek: Int, sunriseMin: Int, sunsetMin: Int): Pair<List<GowriPeriod>, List<GowriPeriod>> {
         val gowriDayOrder = when (dayOfWeek) {
             1 -> listOf("உத்தி", "அமிர்தம்", "ரோகம்", "லாபம்", "தனம்", "விஷம்", "சுகம்", "சோரம்")
             2 -> listOf("அமிர்தம்", "ரோகம்", "லாபம்", "தனம்", "விஷம்", "சுகம்", "சோரம்", "உத்தி")
@@ -713,23 +1118,55 @@ object ThiruGanithaEngine {
             else -> listOf("சுகம்", "சோரம்", "உத்தி", "அமிர்தம்", "ரோகம்", "லாபம்", "தனம்", "விஷம்")
         }
 
-        val slots = listOf(
-            "06:00 AM - 07:30 AM", "07:30 AM - 09:00 AM", "09:00 AM - 10:30 AM", "10:30 AM - 12:00 PM",
-            "12:00 PM - 01:30 PM", "01:30 PM - 03:00 PM", "03:00 PM - 04:30 PM", "04:30 PM - 06:00 PM"
-        )
+        val gowriNightOrder = when (dayOfWeek) {
+            1 -> listOf("சோரம்", "சுகம்", "விஷம்", "தனம்", "லாபம்", "ரோகம்", "அமிர்தம்", "உத்தி")
+            2 -> listOf("உத்தி", "சோரம்", "சுகம்", "விஷம்", "தனம்", "லாபம்", "ரோகம்", "அமிர்தம்")
+            3 -> listOf("அமிர்தம்", "உத்தி", "சோரம்", "சுகம்", "விஷம்", "தனம்", "லாபம்", "ரோகம்")
+            4 -> listOf("ரோகம்", "அமிர்தம்", "உத்தி", "சோரம்", "சுகம்", "விஷம்", "தனம்", "லாபம்")
+            5 -> listOf("லாபம்", "ரோகம்", "அமிர்தம்", "உத்தி", "சோரம்", "சுகம்", "விஷம்", "தனம்")
+            6 -> listOf("தனம்", "லாபம்", "ரோகம்", "அமிர்தம்", "உத்தி", "சோரம்", "சுகம்", "விஷம்")
+            else -> listOf("விஷம்", "தனம்", "லாபம்", "ரோகம்", "அமிர்தம்", "உத்தி", "சோரம்", "சுகம்")
+        }
 
-        return gowriDayOrder.mapIndexed { index, nameTamil ->
+        val dayPartLen = (sunsetMin - sunriseMin) / 8.0
+        val nextSunriseMin = sunriseMin + 1440
+        val nightPartLen = (nextSunriseMin - sunsetMin) / 8.0
+
+        val dayList = gowriDayOrder.mapIndexed { index, nameTamil ->
+            val start = (sunriseMin + index * dayPartLen).toInt()
+            val end = (start + dayPartLen).toInt()
             val (nameEng, qualityTamil, qualityEng, isGood) = parseGowriDetails(nameTamil)
             GowriPeriod(
                 periodIndex = index + 1,
-                timeSlot = slots[index],
+                timeSlot = "${formatMinutesToAmPm(start)} - ${formatMinutesToAmPm(end)}",
                 nameTamil = nameTamil,
                 nameEnglish = nameEng,
                 qualityTamil = qualityTamil,
                 qualityEnglish = qualityEng,
-                isGood = isGood
+                isGood = isGood,
+                startMinutes = start,
+                endMinutes = end
             )
         }
+
+        val nightList = gowriNightOrder.mapIndexed { index, nameTamil ->
+            val start = (sunsetMin + index * nightPartLen).toInt()
+            val end = (start + nightPartLen).toInt()
+            val (nameEng, qualityTamil, qualityEng, isGood) = parseGowriDetails(nameTamil)
+            GowriPeriod(
+                periodIndex = index + 9,
+                timeSlot = "${formatMinutesToAmPm(start)} - ${formatMinutesToAmPm(end)}",
+                nameTamil = nameTamil,
+                nameEnglish = nameEng,
+                qualityTamil = qualityTamil,
+                qualityEnglish = qualityEng,
+                isGood = isGood,
+                startMinutes = start,
+                endMinutes = end
+            )
+        }
+
+        return Pair(dayList, nightList)
     }
 
     private fun parseGowriDetails(nameTamil: String): Quadruple<String, String, String, Boolean> {
@@ -746,46 +1183,88 @@ object ThiruGanithaEngine {
         }
     }
 
-    private fun generateSubhaHorai(dayOfWeek: Int): List<HoraiPeriod> {
+    /**
+     * Classical Vedic / Tamil Panchangam Horai Engine
+     * Planetary sequence (Chaldean Order from outer to inner):
+     * Sun -> Venus -> Mercury -> Moon -> Saturn -> Jupiter -> Mars -> (Sun...)
+     * 1st hour lord is the day lord (ஞாயிறு: சூரியன், திங்கள்: சந்திரன், செவ்வாய்: செவ்வாய், புதன்: புதன், வியாழன்: குரு, வெள்ளி: சுக்கிரன், சனி: சனி).
+     * Every successive hour advances by 1 in this sequence, starting strictly from Sunrise!
+     */
+    private fun generateSubhaHorai(dayOfWeek: Int, sunriseMin: Int, sunsetMin: Int): Pair<List<HoraiPeriod>, List<HoraiPeriod>> {
         val planetaryRulers = listOf(
-            Pair("சூரியன்", "Sun"), Pair("சுக்கிரன்", "Venus"), Pair("புதன்", "Mercury"),
-            Pair("சந்திரன்", "Moon"), Pair("சனி", "Saturn"), Pair("குரு", "Jupiter"),
-            Pair("செவ்வாய்", "Mars")
+            Pair("சூரியன்", "Sun"),     // 0
+            Pair("சுக்கிரன்", "Venus"),   // 1
+            Pair("புதன்", "Mercury"),    // 2
+            Pair("சந்திரன்", "Moon"),     // 3
+            Pair("சனி", "Saturn"),       // 4
+            Pair("குரு", "Jupiter"),     // 5
+            Pair("செவ்வாய்", "Mars")     // 6
         )
 
         val firstPlanetIndex = when (dayOfWeek) {
-            1 -> 0 // Sun
-            2 -> 3 // Moon
-            3 -> 6 // Mars
-            4 -> 2 // Mercury
-            5 -> 5 // Jupiter
-            6 -> 1 // Venus
-            else -> 4 // Saturn
+            1 -> 0 // Sun (ஞாயிறு)
+            2 -> 3 // Moon (திங்கள்)
+            3 -> 6 // Mars (செவ்வாய்)
+            4 -> 2 // Mercury (புதன்)
+            5 -> 5 // Jupiter (வியாழன்)
+            6 -> 1 // Venus (வெள்ளி)
+            else -> 4 // Saturn (சனி)
         }
 
-        val horaiList = mutableListOf<HoraiPeriod>()
-        for (i in 0 until 12) {
-            val planet = planetaryRulers[(firstPlanetIndex + (i * 3)) % 7]
-            val isGood = planet.second in listOf("Sun", "Venus", "Mercury", "Jupiter", "Moon")
-            val hourStart = 6 + i
-            val startStr = String.format("%02d:00 %s", if (hourStart % 12 == 0) 12 else hourStart % 12, if (hourStart >= 12) "PM" else "AM")
-            val hourEnd = hourStart + 1
-            val endStr = String.format("%02d:00 %s", if (hourEnd % 12 == 0) 12 else hourEnd % 12, if (hourEnd >= 12) "PM" else "AM")
+        val dayHorai = mutableListOf<HoraiPeriod>()
+        val nightHorai = mutableListOf<HoraiPeriod>()
 
-            horaiList.add(
-                HoraiPeriod(
-                    periodIndex = i + 1,
-                    timeSlot = "$startStr - $endStr",
-                    planetTamil = planet.first,
-                    planetEnglish = planet.second,
-                    qualityTamil = if (isGood) "சுப ஹோரை (நன்று)" else "அசுப ஹோரை",
-                    qualityEnglish = if (isGood) "Auspicious Horai" else "Inauspicious Horai",
-                    isGood = isGood
-                )
+        for (i in 0 until 24) {
+            val planet = planetaryRulers[(firstPlanetIndex + i) % 7]
+            val isGood = planet.second in listOf("Jupiter", "Venus", "Mercury", "Moon", "Sun")
+
+            val qualityTamil = when (planet.second) {
+                "Jupiter", "Venus" -> "உத்தமம் (சுப ஓரை)"
+                "Mercury", "Moon" -> "சுபம் (சுப ஓரை)"
+                "Sun" -> "மத்திமம் (சுப ஓரை)"
+                else -> "அசுபம் (தவிர்க்கவும்)"
+            }
+            val qualityEnglish = when (planet.second) {
+                "Jupiter", "Venus" -> "Highly Auspicious"
+                "Mercury", "Moon" -> "Auspicious"
+                "Sun" -> "Moderate"
+                else -> "Inauspicious"
+            }
+
+            val startMin = (sunriseMin + i * 60)
+            val endMin = (startMin + 60)
+            val slotStr = "${formatMinutesToAmPm(startMin)} - ${formatMinutesToAmPm(endMin)}"
+
+            val period = HoraiPeriod(
+                periodIndex = i + 1,
+                timeSlot = slotStr,
+                planetTamil = planet.first,
+                planetEnglish = planet.second,
+                qualityTamil = qualityTamil,
+                qualityEnglish = qualityEnglish,
+                isGood = (planet.second !in listOf("Saturn", "Mars")),
+                startMinutes = startMin,
+                endMinutes = endMin
             )
+
+            if (i < 12) {
+                dayHorai.add(period)
+            } else {
+                nightHorai.add(period)
+            }
         }
-        return horaiList
+        return Pair(dayHorai, nightHorai)
     }
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+    private data class NakshatraTuple(
+        val nameTa: String,
+        val nameEn: String,
+        val pada: Int,
+        val rasiTa: String,
+        val rasiEn: String,
+        val rulerTa: String,
+        val rulerEn: String,
+        val rasiIndex: Int
+    )
 }

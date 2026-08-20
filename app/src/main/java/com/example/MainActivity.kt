@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
@@ -24,10 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.PanchangViewModel
 import com.example.ui.components.HeaderBar
-import com.example.ui.screens.ApiExplorerScreen
 import com.example.ui.screens.DailyPanchangScreen
 import com.example.ui.screens.GowriHoraiScreen
 import com.example.ui.screens.MonthlyCalendarScreen
+import com.example.ui.screens.RasiPalanScreen
 import com.example.ui.screens.SavedRecordsScreen
 import com.example.ui.theme.PanchangTheme
 
@@ -38,11 +38,37 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize Notification Channels and Schedule Daily 6 AM Panchang Reminder
+        try {
+            com.example.notifications.FestivalNotificationHelper.createNotificationChannel(this)
+            com.example.notifications.FestivalNotificationHelper.scheduleDailyMorningReminder(this)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Trigger Home Screen Widget update & schedule live ticks
+        try {
+            com.example.widget.PanchangWidgetProvider.updateAllWidgets(this)
+            com.example.widget.PanchangWidgetProvider.scheduleNextWidgetUpdate(this)
+        } catch (_: Exception) {}
+
         setContent {
             PanchangTheme {
                 PanchangAppMain(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            com.example.widget.PanchangWidgetProvider.updateAllWidgets(this)
+            com.example.widget.PanchangWidgetProvider.scheduleNextWidgetUpdate(this)
+        } catch (_: Exception) {}
     }
 }
 
@@ -50,13 +76,14 @@ enum class PanchangTab(val tag: String, val labelTamil: String, val labelEnglish
     DAILY("tab_daily", "இன்று", "Daily", Icons.Default.Today),
     GOWRI_HORAI("tab_gowri", "கௌரி/ஹோரை", "Gowri & Horai", Icons.Default.Schedule),
     CALENDAR("tab_calendar", "மாத நாட்காட்டி", "Calendar", Icons.Default.CalendarMonth),
-    API_EXPLORER("tab_api", "REST API", "API Explorer", Icons.Default.Code),
+    RASI_PALAN("tab_rasi", "ராசி பலன்", "Rasi Palan", Icons.Default.AutoAwesome),
     SAVED("tab_saved", "சேமித்தவை", "Saved", Icons.Default.Bookmark)
 }
 
 @Composable
 fun PanchangAppMain(viewModel: PanchangViewModel) {
     var currentTab by remember { mutableStateOf(PanchangTab.DAILY) }
+    var showRemindersDialog by remember { mutableStateOf(false) }
 
     val selectedDate by viewModel.selectedDate.collectAsState()
     val selectedCity by viewModel.selectedCity.collectAsState()
@@ -71,6 +98,14 @@ fun PanchangAppMain(viewModel: PanchangViewModel) {
     val savedRecords by viewModel.savedRecords.collectAsState()
     val isRecordSavedForToday by viewModel.isRecordSavedForToday.collectAsState()
 
+    if (showRemindersDialog) {
+        com.example.ui.components.FestivalRemindersDialog(
+            currentCity = selectedCity,
+            language = language,
+            onDismiss = { showRemindersDialog = false }
+        )
+    }
+
     Scaffold(
         topBar = {
             HeaderBar(
@@ -79,7 +114,8 @@ fun PanchangAppMain(viewModel: PanchangViewModel) {
                 isSaved = isRecordSavedForToday,
                 onCitySelected = { viewModel.setCity(it) },
                 onToggleLanguage = { viewModel.toggleLanguage() },
-                onSaveToggle = { viewModel.saveCurrentPanchang() }
+                onSaveToggle = { viewModel.saveCurrentPanchang() },
+                onOpenReminders = { showRemindersDialog = true }
             )
         },
         bottomBar = {
@@ -139,17 +175,12 @@ fun PanchangAppMain(viewModel: PanchangViewModel) {
                         }
                     )
                 }
-                PanchangTab.API_EXPLORER -> {
-                    ApiExplorerScreen(
-                        currentEndpoint = apiEndpoint,
-                        apiResponseText = apiResponseText,
-                        apiStatus = apiStatus,
-                        responseTimeMs = apiResponseTimeMs,
+                PanchangTab.RASI_PALAN -> {
+                    RasiPalanScreen(
                         selectedDate = selectedDate,
-                        selectedCity = selectedCity,
+                        currentCity = selectedCity,
                         language = language,
-                        onEndpointChanged = { endpoint -> viewModel.setApiEndpoint(endpoint) },
-                        onRunApi = { viewModel.runApiExplorer() }
+                        onDateSelected = { viewModel.setDate(it) }
                     )
                 }
                 PanchangTab.SAVED -> {
