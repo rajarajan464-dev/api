@@ -35,10 +35,13 @@ android {
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      val localDebugKeystore = file("${rootDir}/debug.keystore")
+      if (localDebugKeystore.exists()) {
+        storeFile = localDebugKeystore
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
 
@@ -52,7 +55,12 @@ android {
         signingConfig = relConfig
       }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      val dbgConfig = signingConfigs.getByName("debugConfig")
+      if (dbgConfig.storeFile != null && dbgConfig.storeFile?.exists() == true) {
+        signingConfig = dbgConfig
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
