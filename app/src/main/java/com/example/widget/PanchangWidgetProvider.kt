@@ -88,10 +88,11 @@ class PanchangWidgetProvider : AppWidgetProvider() {
         }
 
         /**
-         * ஓரை மாறும் நேரம் (ஒவ்வொரு மணி நேர ஆரம்பம் 3:00, 4:00 போன்றவை),
+         * 00:01 நள்ளிரவு நாள் மாற்றம், ஒவ்வொரு மணி நேர ஓரை தொடக்கம் மற்றும் முடிவு,
          * ராகு/எமகண்டம்/குளிகை/நல்ல நேரம் தொடங்கும் அல்லது முடியும் நேரம்,
-         * திதி/நட்சத்திர முடிவு நேரம் போன்றவற்றை கணக்கிட்டு, அடுத்த முக்கிய நேர மாற்றத்திற்கு
-         * தானாக அலாரம் அமைக்கிறது. இதனால் ஆப் திறக்காமலே விட்ஜெட் தானாக அப்டேட் ஆகும்.
+         * திதி/நட்சத்திர முடிவு நேரம் போன்றவற்றை மிகத் துல்லியமாகக் கணக்கிட்டு,
+         * அடுத்த மிகச்சரியான நேர மாற்றத்திற்கு (Specific Time Alarm) தானாக அலாரம் அமைக்கிறது.
+         * இதனால் ஆப் திறக்காமலே விட்ஜெட் குறித்த நேரத்தில் தானாகவே புதுப்பிக்கப்படும்.
          */
         fun scheduleNextWidgetUpdate(context: Context) {
             try {
@@ -100,58 +101,94 @@ class PanchangWidgetProvider : AppWidgetProvider() {
                 val zoneId = ZoneId.systemDefault()
                 val currentMillis = now.atZone(zoneId).toInstant().toEpochMilli()
 
-                // 1. அடுத்த மணி நேரத்தின் தொடக்கம் (எ.கா. 3:00, 4:00 - ஓரை மாறும் நேரம்)
-                val nextHour = now.truncatedTo(ChronoUnit.HOURS).plusHours(1).plusSeconds(2)
-                var nextTriggerMillis = nextHour.atZone(zoneId).toInstant().toEpochMilli()
+                val candidateTriggerTimes = mutableListOf<LocalDateTime>()
 
-                // 2. இன்றைய விசேஷ நேர மாற்றங்கள் (ரஹு, எமகண்டம், நல்ல நேரம், திதி, நட்சத்திரம், ஓரை)
+                // 1. நள்ளிரவு 00:01:05 நாள் மாற்ற நேரம் (Midnight 00:01 Day Rollover)
                 val today = LocalDate.now()
+                val tomorrow = today.plusDays(1)
+
+                // Today 00:01:05 (if still in the future)
+                candidateTriggerTimes.add(today.atTime(0, 1, 5))
+                // Tomorrow 00:01:05 (guaranteed future midnight checkpoint)
+                candidateTriggerTimes.add(tomorrow.atTime(0, 1, 5))
+                // Tomorrow 00:00:05
+                candidateTriggerTimes.add(tomorrow.atTime(0, 0, 5))
+
+                // 2. அடுத்த மணி நேரத்தின் தொடக்கம் (Top of next hour: e.g., 01:00:05, 02:00:05...)
+                val nextHour = now.truncatedTo(ChronoUnit.HOURS).plusHours(1).plusSeconds(5)
+                candidateTriggerTimes.add(nextHour)
+
+                // 3. இன்றைய மற்றும் நாளைய பஞ்சாங்க நேர மாற்றங்களை கணக்கிடுதல்
                 val defaultCity = CityLocation("chennai", "சென்னை", "Chennai", 13.0827, 80.2707, 5.5)
-                val panchang = ThiruGanithaEngine.calculatePanchang(today, defaultCity)
 
-                val transitionMinutes = mutableListOf<Int>()
+                fun addTransitionsForDate(date: LocalDate) {
+                    try {
+                        val panchang = ThiruGanithaEngine.calculatePanchang(date, defaultCity)
 
-                fun addRange(range: TimeRange) {
-                    parseTimeToMinutes(range.startTime)?.let { transitionMinutes.add(it) }
-                    parseTimeToMinutes(range.endTime)?.let { transitionMinutes.add(it) }
-                }
-
-                addRange(panchang.rahuKalam)
-                addRange(panchang.yamagandam)
-                addRange(panchang.kuligai)
-                addRange(panchang.nallaNeram.morning)
-                addRange(panchang.nallaNeram.evening)
-                addRange(panchang.gowriNallaNeram.morning)
-                addRange(panchang.gowriNallaNeram.evening)
-
-                // Add all 24 Horai transition points
-                val all24Horai = panchang.horaiDayList + panchang.horaiNightList
-                for (h in all24Horai) {
-                    transitionMinutes.add(h.startMinutes)
-                    transitionMinutes.add(h.endMinutes)
-                }
-
-                if (panchang.tithi.endTimeMinutes > 0) {
-                    transitionMinutes.add(panchang.tithi.endTimeMinutes)
-                }
-                if (panchang.nakshatra.endTimeMinutes > 0) {
-                    transitionMinutes.add(panchang.nakshatra.endTimeMinutes)
-                }
-
-                val currentMin = now.hour * 60 + now.minute
-                for (tMin in transitionMinutes) {
-                    val normalizedMin = (tMin % 1440 + 1440) % 1440
-                    if (normalizedMin > currentMin) {
-                        val transTime = today.atTime(normalizedMin / 60, normalizedMin % 60, 2)
-                        val transMillis = transTime.atZone(zoneId).toInstant().toEpochMilli()
-                        if (transMillis > currentMillis + 3000 && transMillis < nextTriggerMillis) {
-                            nextTriggerMillis = transMillis
+                        fun addRange(range: TimeRange) {
+                            parseTimeToMinutes(range.startTime)?.let { min ->
+                                candidateTriggerTimes.add(date.atTime(min / 60, min % 60, 5))
+                            }
+                            parseTimeToMinutes(range.endTime)?.let { min ->
+                                candidateTriggerTimes.add(date.atTime(min / 60, min % 60, 5))
+                            }
                         }
+
+                        addRange(panchang.rahuKalam)
+                        addRange(panchang.yamagandam)
+                        addRange(panchang.kuligai)
+                        addRange(panchang.nallaNeram.morning)
+                        addRange(panchang.nallaNeram.evening)
+                        addRange(panchang.gowriNallaNeram.morning)
+                        addRange(panchang.gowriNallaNeram.evening)
+
+                        // Add all 24 Horai transition points for the day
+                        val all24Horai = panchang.horaiDayList + panchang.horaiNightList
+                        for (h in all24Horai) {
+                            val startMin = h.startMinutes
+                            val endMin = h.endMinutes
+
+                            val startTime = if (startMin < 1440) {
+                                date.atTime(startMin / 60, startMin % 60, 5)
+                            } else {
+                                date.plusDays(1).atTime((startMin - 1440) / 60, (startMin - 1440) % 60, 5)
+                            }
+                            candidateTriggerTimes.add(startTime)
+
+                            val endTime = if (endMin < 1440) {
+                                date.atTime(endMin / 60, endMin % 60, 5)
+                            } else {
+                                date.plusDays(1).atTime((endMin - 1440) / 60, (endMin - 1440) % 60, 5)
+                            }
+                            candidateTriggerTimes.add(endTime)
+                        }
+
+                        // Tithi & Nakshatra end times
+                        if (panchang.tithi.endTimeMinutes in 1..1439) {
+                            candidateTriggerTimes.add(date.atTime(panchang.tithi.endTimeMinutes / 60, panchang.tithi.endTimeMinutes % 60, 5))
+                        }
+                        if (panchang.nakshatra.endTimeMinutes in 1..1439) {
+                            candidateTriggerTimes.add(date.atTime(panchang.nakshatra.endTimeMinutes / 60, panchang.nakshatra.endTimeMinutes % 60, 5))
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PanchangWidget", "Error adding transitions for $date", e)
                     }
                 }
 
-                // அதிகபட்சம் 30 நிமிடத்திற்குள் ஒரு முறையேனும் புதுப்பிக்கப்படுவது உறுதி செய்யப்படுகிறது
-                val maxIntervalMillis = currentMillis + (30 * 60 * 1000L)
+                // Add transitions for today and tomorrow
+                addTransitionsForDate(today)
+                addTransitionsForDate(tomorrow)
+
+                // Filter only future candidates at least 3 seconds from now
+                val futureCandidates = candidateTriggerTimes
+                    .map { it.atZone(zoneId).toInstant().toEpochMilli() }
+                    .filter { it > currentMillis + 3000L }
+                    .sorted()
+
+                var nextTriggerMillis = futureCandidates.firstOrNull() ?: (currentMillis + 15 * 60 * 1000L)
+
+                // அதிகபட்ச இடைவெளி 15 நிமிடத்திற்கு மிகாமல் இருத்தல் (Max fallback 15 mins)
+                val maxIntervalMillis = currentMillis + (15 * 60 * 1000L)
                 if (nextTriggerMillis > maxIntervalMillis) {
                     nextTriggerMillis = maxIntervalMillis
                 }
@@ -179,6 +216,7 @@ class PanchangWidgetProvider : AppWidgetProvider() {
                 } else {
                     alarmManager.set(AlarmManager.RTC_WAKEUP, nextTriggerMillis, pendingIntent)
                 }
+                Log.d("PanchangWidget", "Next widget alarm scheduled for: ${java.util.Date(nextTriggerMillis)}")
             } catch (e: Exception) {
                 Log.e("PanchangWidget", "Error scheduling widget update alarm", e)
             }
